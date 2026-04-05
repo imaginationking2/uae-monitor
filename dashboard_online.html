@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UAE Market Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg:#0f0f0f; --surface:#181818; --surface2:#222222;
+    --border:rgba(255,255,255,0.08); --text:#e8e8e4; --muted:#888780;
+    --green:#1D9E75; --blue:#378ADD; --amber:#EF9F27;
+    --red:#E24B4A; --teal:#5DCAA5; --coral:#D85A30; --purple:#7F77DD;
+    --radius:10px; --radius-sm:6px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:13px; line-height:1.5; padding:20px; }
+  .dash { display:flex; flex-direction:column; gap:14px; max-width:1400px; margin:0 auto; }
+  .grid2 { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .card { background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+  .mc { background:var(--surface2); border-radius:var(--radius-sm); padding:12px 14px; }
+  .mc .lbl { font-size:10px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .mc .val { font-size:22px; font-weight:600; line-height:1.1; }
+  .mc .sub { font-size:11px; color:var(--muted); margin-top:3px; }
+  .st { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; }
+  .pill { display:inline-block; font-size:10px; font-weight:600; padding:3px 9px; border-radius:99px; letter-spacing:.03em; white-space:nowrap; }
+  .p-ok   { background:rgba(29,158,117,.18);  color:#5DCAA5; border:0.5px solid rgba(29,158,117,.3); }
+  .p-warn { background:rgba(239,159,39,.15);  color:#FAC775; border:0.5px solid rgba(239,159,39,.3); }
+  .p-red  { background:rgba(226,75,74,.15);   color:#F09595; border:0.5px solid rgba(226,75,74,.3); }
+  .p-blue { background:rgba(55,138,221,.15);  color:#85B7EB; border:0.5px solid rgba(55,138,221,.3); }
+  .p-gray { background:var(--surface2); color:var(--muted); border:0.5px solid var(--border); }
+  .header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding-bottom:14px; border-bottom:0.5px solid var(--border); }
+  .header h1 { font-size:18px; font-weight:600; }
+  .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:6px; animation:pulse 2s infinite; }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .gauge-wrap { display:flex; flex-direction:column; align-items:center; }
+  .gauge-num { font-size:52px; font-weight:700; line-height:1; margin-top:-10px; }
+  .bar-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .bar-lbl { font-size:11px; color:var(--muted); width:118px; flex-shrink:0; }
+  .bar-track { flex:1; height:6px; background:var(--surface2); border-radius:3px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:3px; transition:width .6s ease; }
+  .bar-val { font-size:11px; font-weight:600; width:38px; text-align:right; flex-shrink:0; }
+  .bar-note { font-size:10px; color:var(--muted); margin:-4px 0 8px 126px; line-height:1.4; }
+  .leg { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
+  .li { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+  .ld { width:14px; height:3px; border-radius:2px; flex-shrink:0; }
+  .cw { position:relative; width:100%; }
+  .reminder { background:rgba(239,159,39,.1); border:0.5px solid rgba(239,159,39,.25); border-radius:var(--radius-sm); padding:10px 14px; font-size:11px; color:#FAC775; display:flex; align-items:center; gap:10px; }
+  .lux-explain { font-size:11px; color:var(--muted); line-height:1.7; background:var(--surface2); border-radius:var(--radius-sm); padding:10px 14px; margin-top:10px; }
+  .mode-badge { background:var(--surface2); border-radius:var(--radius-sm); padding:9px 13px; display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .src { font-size:10px; color:var(--muted); margin-top:6px; }
+  .status-bar { font-size:10px; color:var(--muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; padding-top:10px; border-top:0.5px solid var(--border); }
+  .loading { display:flex; align-items:center; justify-content:center; min-height:80vh; flex-direction:column; gap:16px; }
+  .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--green); border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .warn-box { background:rgba(239,159,39,.08); border:0.5px solid rgba(239,159,39,.2); border-radius:var(--radius-sm); padding:10px 14px; font-size:11px; color:#FAC775; margin-bottom:4px; }
+  @media(max-width:700px){ .grid2,.grid3,.grid4{grid-template-columns:1fr;} body{padding:12px;} }
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div style="color:var(--muted);font-size:12px;">Fetching from GitHub Gist…</div>
+</div>
+
+<div class="dash" id="dash" style="display:none;">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div>
+      <h1>🇦🇪 UAE Market Monitor</h1>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;" id="hdr-sub"><span class="pulse"></span>Loading…</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span id="stress-pill" class="pill p-gray">— / 100</span>
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:var(--muted);"><span class="pulse"></span>Auto-refreshes every 10 min</div>
+        <div style="font-size:10px;color:var(--muted);" id="next-tick">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WARNINGS (shown only when data is stale/missing) -->
+  <div id="warn-area"></div>
+
+  <!-- REMINDER -->
+  <div class="reminder">📅 <strong>Reminder — end of April 2026:</strong>&nbsp; Add April transaction figures to scorer.py → HISTORICAL_TX.</div>
+
+  <!-- ROW 1: Gauge + Sub-scores -->
+  <div class="grid2">
+    <div class="card gauge-wrap" style="justify-content:center;gap:8px;">
+      <svg width="220" height="120" viewBox="0 0 220 120">
+        <path d="M22,108 A88,88 0 0,1 110,20"  fill="none" stroke="#1D9E75" stroke-width="14" stroke-linecap="butt" opacity=".3"/>
+        <path d="M110,20 A88,88 0 0,1 178,68"  fill="none" stroke="#EF9F27" stroke-width="14" stroke-linecap="butt" opacity=".3"/>
+        <path d="M178,68 A88,88 0 0,1 198,108" fill="none" stroke="#E24B4A" stroke-width="14" stroke-linecap="butt" opacity=".3"/>
+        <path id="gauge-arc" d="" fill="none" stroke-width="14" stroke-linecap="round"/>
+        <line id="gauge-needle" x1="110" y1="108" x2="35" y2="40" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="110" cy="108" r="5" fill="var(--text)"/>
+        <text x="10"  y="116" font-size="10" fill="#888780">0</text>
+        <text x="98"  y="13"  font-size="10" fill="#888780">50</text>
+        <text x="196" y="116" font-size="10" fill="#888780">100</text>
+      </svg>
+      <div class="gauge-num" id="gauge-num">—</div>
+      <div style="font-size:11px;color:var(--muted);">stress index · out of 100</div>
+      <div style="width:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+        <div class="mode-badge"><span style="color:var(--muted);">HYTE</span><span id="hyte-pill" class="pill p-blue">—</span></div>
+        <div class="mode-badge"><span style="color:var(--muted);">Al Zorah</span><span id="alz-pill" class="pill p-ok">—</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="st">Stress sub-scores</div>
+      <div id="subscores"></div>
+    </div>
+  </div>
+
+  <!-- ROW 2: Luxury Price Drops -->
+  <div class="card">
+    <div class="st">Luxury Price Drops — Dubai <span id="lux-d-pill" class="pill p-gray">D score — / 10</span></div>
+    <div class="grid4" id="lux-metrics"></div>
+    <div class="lux-explain" id="lux-explain">—</div>
+  </div>
+
+  <!-- ROW 3: Dubizzle trend -->
+  <div class="card">
+    <div class="st">Dubizzle UAE — listing count trend (day by day)</div>
+    <div class="leg" id="dub-leg"></div>
+    <div class="cw" style="height:200px;"><canvas id="dubChart"></canvas></div>
+    <div class="src" id="dub-note"></div>
+  </div>
+
+  <!-- ROW 4: Bayut D9 + Benchmark -->
+  <div class="grid2">
+    <div class="card">
+      <div class="st">District 9, Al Zorah — listed properties</div>
+      <div class="cw" style="height:170px;"><canvas id="d9Chart"></canvas></div>
+      <div class="src" id="d9-note"></div>
+    </div>
+    <div class="card">
+      <div class="st">Benchmark — Villa D9 (AED M)</div>
+      <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:7px 11px;margin-bottom:8px;font-size:11px;color:var(--muted);" id="bench-title">—</div>
+      <div class="cw" style="height:135px;"><canvas id="benchChart"></canvas></div>
+      <div class="src" id="bench-note"></div>
+    </div>
+  </div>
+
+  <!-- ROW 5: Luxury drops trend -->
+  <div class="card">
+    <div class="st">Luxury drops — daily count trend</div>
+    <div class="cw" style="height:150px;"><canvas id="luxChart"></canvas></div>
+    <div class="src">Dashed: 1,500 = score 8/10 · 2,500 = score 10/10 (max stress)</div>
+  </div>
+
+  <!-- ROW 6: Transactions -->
+  <div class="card">
+    <div class="st">UAE transaction history — 2026</div>
+    <div class="cw" style="height:145px;margin-bottom:12px;"><canvas id="txChart"></canvas></div>
+    <div class="grid3" id="tx-cards"></div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <span id="last-updated">Data: —</span>
+    <span>Source: github.com/imaginationking2 · gist · auto-updates every 10 min</span>
+  </div>
+
+</div>
+
+<script>
+const GIST  = 'https://gist.githubusercontent.com/imaginationking2/6864f9c206558d36b9777b00f3758087/raw';
+const REFRESH_MS = 10 * 60 * 1000;
+
+const C = {
+  green:'#1D9E75',blue:'#378ADD',amber:'#EF9F27',red:'#E24B4A',
+  teal:'#5DCAA5',coral:'#D85A30',purple:'#7F77DD',gray:'#888780',
+  grid:'rgba(255,255,255,0.06)',tick:'#888780'
+};
+const DUB_KEYS   = ['furniture_home','home_appliances','sports','mobiles_tablets','electronics','computers'];
+const DUB_LABELS = ['Furniture & Home','Home Appliances','Sports Equipment','Mobiles & Tablets','Electronics','Computers & Net'];
+const DUB_COLORS = [C.green,C.blue,C.amber,C.coral,C.purple,C.gray];
+
+// Fallback history when uae_history.json not yet on Gist
+const EMPTY_HISTORY = { dubizzle_series:[], bayut_series:[], luxury_drops_series:[], stress_series:[] };
+
+let charts = {};
+const $ = id => document.getElementById(id);
+const fmt = n => n!=null ? Number(n).toLocaleString() : '—';
+const fmtDate = e => { const d=new Date(e.date); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); };
+
+// ── Fetch from Gist — each file independently so one missing doesn't kill all ─
+async function loadData() {
+  const ts = Date.now();
+  const warnings = [];
+
+  // Latest data — required
+  const r1 = await fetch(`${GIST}/uae_market_data.json?t=${ts}`);
+  if (!r1.ok) throw new Error(`Gist fetch failed (${r1.status}) — has scorer.py run yet?`);
+  const latest = await r1.json();
+
+  // Check if it's the placeholder
+  if (latest.status === 'initializing') {
+    warnings.push('⚠ Gist has placeholder data — run scorer.py on your PC to push real data.');
+  }
+
+  // History — optional, use empty fallback if missing
+  let history = EMPTY_HISTORY;
+  try {
+    const r2 = await fetch(`${GIST}/uae_history.json?t=${ts}`);
+    if (r2.ok) {
+      history = await r2.json();
+    } else {
+      warnings.push('ℹ History file not on Gist yet — run scorer.py to push it. Charts will show once data exists.');
+    }
+  } catch { warnings.push('ℹ History file unavailable — charts will populate after scorer.py runs.'); }
+
+  return { latest, history, warnings };
+}
+
+// ── Gauge ─────────────────────────────────────────────────────────────────────
+function updateGauge(score) {
+  const cx=110,cy=108,r=88,startA=218,sweep=284;
+  const polar=d=>{const rad=(d-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)};};
+  const endDeg=startA+(score/100)*sweep;
+  const s=polar(startA),e=polar(endDeg),large=((score/100)*sweep)>180?1:0;
+  $('gauge-arc').setAttribute('d',`M ${s.x},${s.y} A ${r},${r} 0 ${large},1 ${e.x},${e.y}`);
+  const nRad=(endDeg-90)*Math.PI/180;
+  $('gauge-needle').setAttribute('x2',(cx+(r-14)*Math.cos(nRad)).toFixed(1));
+  $('gauge-needle').setAttribute('y2',(cy+(r-14)*Math.sin(nRad)).toFixed(1));
+  const col=score>=65?C.red:score>=45?C.amber:C.green;
+  $('gauge-arc').setAttribute('stroke',col);
+  $('gauge-num').textContent=score;
+  $('gauge-num').style.color=col;
+}
+
+// ── Stress calc ───────────────────────────────────────────────────────────────
+function calcStress(latest) {
+  const tx=latest.historical_tx||[],last=tx[tx.length-1],ref=tx[0]?.count||1;
+  const txPct=last?(last.count-ref)/ref*100:0;
+  const aScr=txPct>=-5?5:txPct>=-15?12:txPct>=-30?20:25;
+  const dub=latest.dubizzle||{};
+  const chgs=Object.values(dub.vs_baseline_pct||{}).filter(v=>v!=null);
+  const avg=chgs.length?chgs.reduce((a,b)=>a+b,0)/chgs.length:0;
+  const bScr=avg>=30?20:avg>=15?15:avg>=5?10:5;
+  const alz=latest.alzorah||{},bench=latest.benchmark_property||{};
+  const lc=alz.listing_count||0,bChg=bench.price_change_pct||0;
+  const cLst=lc>40?6:lc>20?4:lc>10?2:1,cBen=bChg<-5?9:bChg<-2?6:bChg<0?4:bChg===0?2:1;
+  const cScr=Math.min(cLst+cBen,15);
+  const lux=latest.luxury_drops||{},dc=lux.drop_count||0;
+  const dScr=dc>=2500?10:dc>=1500?8:dc>=1000?6:dc>=500?4:2;
+  const total=aScr+bScr+cScr+dScr+5+4+10;
+  const band=total<25?'Normal':total<45?'Mild caution':total<65?'Clear stress building':total<80?'High stress':'Severe stress';
+  const hyte=total<55?'Hold / markup':total<70?'Controlled clearance':total<80?'Aggressive clearance':'Exit / cash convert';
+  const alzM=total<50?'Hold fully':total<65?'Improve selectively then sell':total<75?'Partial exit':'Urgent sale';
+  return {
+    total,band,hyte_mode:hyte,alzorah_mode:alzM,dScr,
+    subscores:{
+      A_transactions:{score:aScr,max:25,note:last?`${last.period}: ${fmt(last.count)} (${txPct.toFixed(1)}% vs ${tx[0]?.period})`:''},
+      B_dubizzle:    {score:bScr,max:20,note:`Avg ${avg>=0?'+':''}${avg.toFixed(1)}% vs baseline`},
+      C_alzorah:     {score:cScr,max:15,note:`${lc} listings · AED ${bench.price_aed_m||'?'}M · ${bench.flag||'—'}`},
+      D_liquidation: {score:dScr,max:10,note:`${fmt(dc)} luxury drops · ${lux.avg_drop_pct||'—'}% avg · −AED ${lux.total_dropped_aed_m||'—'}M`},
+      E_logistics:{score:5,max:10},F_sentiment:{score:4,max:10},G_macro:{score:10,max:10},
+    }
+  };
+}
+
+// ── Sub-scores ────────────────────────────────────────────────────────────────
+function renderSubscores(stress) {
+  const names={A_transactions:'A — Transactions',B_dubizzle:'B — Dubizzle',C_alzorah:'C — Al Zorah',D_liquidation:'D — Lux drops',E_logistics:'E — Logistics',F_sentiment:'F — Sentiment',G_macro:'G — Macro'};
+  const order=['A_transactions','B_dubizzle','C_alzorah','D_liquidation','E_logistics','F_sentiment','G_macro'];
+  $('subscores').innerHTML=order.map(k=>{
+    const s=stress.subscores[k];if(!s)return'';
+    const pct=s.score/s.max,col=pct>=0.8?C.red:pct>=0.5?C.amber:C.green;
+    return `<div class="bar-row"><div class="bar-lbl">${names[k]}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(pct*100)}%;background:${col};"></div></div><div class="bar-val" style="color:${col};">${s.score}/${s.max}</div></div>${s.note?`<div class="bar-note">${s.note}</div>`:''}`;
+  }).join('');
+}
+
+// ── Luxury ────────────────────────────────────────────────────────────────────
+function renderLuxury(lux,dScr) {
+  if(!lux){$('lux-metrics').innerHTML='<div style="color:var(--muted);font-size:11px;grid-column:1/-1;">No luxury drops data yet — will populate after daily scrape.</div>';return;}
+  const dc=lux.drop_count||0,avg=lux.avg_drop_pct||0,tot=lux.total_dropped_aed_m||0,wat=lux.watching_k||0;
+  $('lux-metrics').innerHTML=`
+    <div class="mc"><div class="lbl">Drop count</div><div class="val" style="color:${C.red};">${fmt(dc)}</div><div class="sub">detected today</div></div>
+    <div class="mc"><div class="lbl">Avg drop</div><div class="val" style="color:${C.red};">${avg}%</div><div class="sub">across all drops</div></div>
+    <div class="mc"><div class="lbl">Total value dropped</div><div class="val" style="color:${C.red};">−AED ${tot}M</div><div class="sub">across ${fmt(dc)} listings</div></div>
+    <div class="mc"><div class="lbl">Watching</div><div class="val">${wat}K</div><div class="sub">market participants</div></div>`;
+  const band=dc>=2500?'>2,500 → 10/10':dc>=1500?'1,500–2,500 → 8/10 ✦ current':dc>=1000?'1,000–1,500 → 6/10':dc>=500?'500–1,000 → 4/10':'<500 → 2/10';
+  $('lux-explain').innerHTML=`<strong style="color:var(--text);">How this feeds sub-score D:</strong> ${fmt(dc)} drops falls in the <strong style="color:var(--text);">${band}</strong> band. Thresholds: &lt;500=2 · 500–1k=4 · 1k–1.5k=6 · 1.5k–2.5k=8 · &gt;2.5k=10pts. Total capital discounted: <strong style="color:${C.red};">−AED ${tot}M</strong>.`;
+  const dp=$('lux-d-pill');dp.textContent=`D score: ${dScr}/10`;dp.className='pill '+(dScr>=8?'p-red':dScr>=6?'p-warn':'p-ok');
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart($(id),cfg);}
+const sc=cb=>({x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:11}}},y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:11},callback:cb}}});
+
+function emptyLineChart(id, label, color) {
+  // Show a placeholder chart with no data points but axes visible
+  mkChart(id,{type:'line',data:{labels:['Waiting for data…'],datasets:[{label,data:[null],borderColor:color,borderWidth:2,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}},min:0}}}});
+}
+
+function renderDubChart(series) {
+  const leg=$('dub-leg');leg.innerHTML='';
+  DUB_LABELS.forEach((l,i)=>{const d=document.createElement('div');d.className='li';d.innerHTML=`<span class="ld" style="background:${DUB_COLORS[i]};"></span>${l}`;leg.appendChild(d);});
+  if(!series.length){emptyLineChart('dubChart','Listings',C.green);$('dub-note').textContent='No data yet — populates after first Dubizzle scrape.';return;}
+  mkChart('dubChart',{type:'line',data:{labels:series.map(fmtDate),datasets:DUB_KEYS.map((k,i)=>({label:DUB_LABELS[i],data:series.map(e=>e[k]??null),borderColor:DUB_COLORS[i],backgroundColor:DUB_COLORS[i]+'18',borderWidth:2,pointRadius:series.length===1?5:3,pointHoverRadius:6,tension:0.35,fill:false,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.parsed.y)}`}}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});
+  const last=series[series.length-1];
+  if(last)$('dub-note').textContent='Latest: '+DUB_KEYS.slice(0,3).map((k,i)=>`${DUB_LABELS[i]}: ${fmt(last[k])}`).join(' · ');
+}
+
+function renderD9Chart(series) {
+  if(!series.length){emptyLineChart('d9Chart','Properties',C.blue);$('d9-note').textContent='No data yet — populates after first daily scrape.';return;}
+  mkChart('d9Chart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Properties',data:series.map(e=>e.district9_listings??null),borderColor:C.blue,backgroundColor:C.blue+'22',borderWidth:2,pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} properties`}}},scales:{x:sc().x,y:{...sc().y,min:0,suggestedMax:60}}}});
+  $('d9-note').textContent=`Latest: ${series[series.length-1]?.district9_listings??'—'} properties · read once daily`;
+}
+
+function renderBenchChart(series,latest) {
+  $('bench-title').textContent=latest?.benchmark_property?.title||'Semi-Detached Villa · Corner Type D · District 9';
+  if(!series.length){emptyLineChart('benchChart','AED M',C.coral);$('bench-note').textContent='No data yet — populates after first daily scrape.';return;}
+  mkChart('benchChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'AED M',data:series.map(e=>e.benchmark_price_aed?+(e.benchmark_price_aed/1e6).toFixed(3):null),borderColor:C.coral,backgroundColor:C.coral+'18',borderWidth:2,pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` AED ${c.parsed.y.toFixed(3)}M`}}},scales:{x:sc().x,y:{...sc().y,callback:v=>'AED '+v.toFixed(1)+'M',min:2.5,max:4.0}}}});
+  const bench=latest?.benchmark_property;
+  if(bench){
+    const flag=bench.flag||'NO CHANGE',col=flag.includes('DROP')?C.red:flag.includes('RISE')?C.amber:C.teal;
+    const chg=bench.price_change_pct!=null?` (${bench.price_change_pct>0?'+':''}${bench.price_change_pct}%)`:'';
+    $('bench-note').innerHTML=`<span style="color:${col};">${flag}${chg}</span> · <span style="color:var(--muted);">AED ${bench.price_aed_m}M · read once daily</span>`;
+  }
+}
+
+function renderLuxChart(series) {
+  if(!series.length){emptyLineChart('luxChart','Drops',C.red);return;}
+  mkChart('luxChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[
+    {label:'Drop count',data:series.map(e=>e.drop_count??null),borderColor:C.red,backgroundColor:C.red+'18',borderWidth:2,pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true},
+    {label:'8/10 (1,500)',data:series.map(()=>1500),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+    {label:'10/10 (2,500)',data:series.map(()=>2500),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.parsed.y)}`}}},scales:{x:sc().x,y:{...sc().y,callback:v=>v.toLocaleString(),min:0,suggestedMax:3000}}}});
+}
+
+function renderTxChart(txData) {
+  if(!txData?.length)return;
+  mkChart('txChart',{type:'bar',data:{labels:txData.map(t=>t.period),datasets:[{data:txData.map(t=>t.count),backgroundColor:txData.map((_,i)=>i===txData.length-1?C.red:C.green),borderRadius:4,barPercentage:0.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.parsed.y)} transactions`}}},scales:{x:sc().x,y:{...sc().y,callback:v=>v.toLocaleString(),min:10000,suggestedMax:20000}}}});
+  $('tx-cards').innerHTML=txData.map((t,i)=>{
+    const isLast=i===txData.length-1,prev=i>0?txData[i-1].count:null;
+    const chg=prev?(((t.count-prev)/prev)*100).toFixed(1):null;
+    const col=isLast?`color:${C.red};`:'',bdr=isLast?`border:0.5px solid rgba(226,75,74,.35);`:'';
+    return `<div class="mc" style="${bdr}"><div class="lbl">${t.period}</div><div class="val" style="font-size:18px;${col}">${fmt(t.count)}</div><div class="sub" style="${col}">AED ${t.value_aed_b}B · ${fmt(t.units)} units${chg?' · '+(Number(chg)>0?'+':'')+chg+'%':''}</div></div>`;
+  }).join('');
+}
+
+function pillCls(band){return band?.includes('Normal')||band?.includes('Mild')?'p-ok':band?.includes('Clear')?'p-warn':'p-red';}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+async function render() {
+  try {
+    const {latest,history,warnings}=await loadData();
+
+    $('loading').style.display='none';
+    $('dash').style.display='flex';
+
+    // Show warnings if any
+    $('warn-area').innerHTML=warnings.map(w=>`<div class="warn-box">${w}</div>`).join('');
+
+    const stress=latest.stress_index||calcStress(latest);
+    const dScr=stress.subscores?.D_liquidation?.score??stress.dScr??0;
+
+    const now=new Date();
+    $('hdr-sub').innerHTML=`<span class="pulse"></span>Checked: ${now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · ${now.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}`;
+    const sp=$('stress-pill');sp.textContent=`${stress.total} / 100 — ${stress.band}`;sp.className='pill '+pillCls(stress.band);
+    updateGauge(stress.total);
+    $('hyte-pill').textContent=stress.hyte_mode;
+    $('alz-pill').textContent=stress.alzorah_mode;
+    renderSubscores(stress);
+    renderLuxury(latest.luxury_drops,dScr);
+    renderDubChart(history.dubizzle_series||[]);
+    renderD9Chart(history.bayut_series||[]);
+    renderBenchChart(history.bayut_series||[],latest);
+    renderLuxChart(history.luxury_drops_series||[]);
+    renderTxChart(latest.historical_tx||[]);
+    $('last-updated').textContent=`Collected: ${latest.collected_at?new Date(latest.collected_at).toLocaleString('en-GB'):'—'} · Scored: ${latest.scored_at?new Date(latest.scored_at).toLocaleString('en-GB'):'—'}`;
+
+  } catch(e) {
+    $('loading').innerHTML=`
+      <div style="color:${C.red};font-size:13px;text-align:center;">${e.message}</div>
+      <div style="color:var(--muted);font-size:11px;margin-top:8px;text-align:center;">
+        Run this on your PC:<br>
+        <code style="background:var(--surface);padding:4px 8px;border-radius:4px;margin-top:6px;display:inline-block;">
+          C:\\uae_monitor\\venv\\Scripts\\python.exe C:\\uae_monitor\\scorer.py
+        </code>
+      </div>`;
+    console.error(e);
+  }
+}
+
+// ── Countdown ─────────────────────────────────────────────────────────────────
+let nextAt=Date.now()+REFRESH_MS;
+setInterval(()=>{
+  const s=Math.max(0,Math.round((nextAt-Date.now())/1000)),m=Math.floor(s/60);
+  $('next-tick').textContent=`Next refresh in ${m}:${String(s%60).padStart(2,'0')}`;
+},1000);
+setInterval(()=>{nextAt=Date.now()+REFRESH_MS;render();},REFRESH_MS);
+
+render();
+</script>
+</body>
+</html>
