@@ -56,6 +56,7 @@
   .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--green); border-radius:50%; animation:spin 1s linear infinite; }
   @keyframes spin{to{transform:rotate(360deg)}}
   .warn-box { background:rgba(239,159,39,.08); border:0.5px solid rgba(239,159,39,.2); border-radius:var(--radius-sm); padding:10px 14px; font-size:11px; color:#FAC775; margin-bottom:4px; }
+  .ratio-badge { background:var(--surface2); border-radius:var(--radius-sm); padding:8px 12px; display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:11px; }
   @media(max-width:700px){ .grid2,.grid3,.grid4{grid-template-columns:1fr;} body{padding:12px;} }
 </style>
 </head>
@@ -83,7 +84,7 @@
     </div>
   </div>
 
-  <!-- WARNINGS (shown only when data is stale/missing) -->
+  <!-- WARNINGS -->
   <div id="warn-area"></div>
 
   <!-- REMINDER -->
@@ -146,14 +147,44 @@
     </div>
   </div>
 
-  <!-- ROW 5: Luxury drops trend -->
+  <!-- ROW 5: Ajman Property Market (NEW) -->
+  <div class="card">
+    <div class="st">Ajman Property Market — Bayut supply pressure
+      <span id="ajman-ratio-pill" class="pill p-gray">Sale:Rent ratio —</span>
+    </div>
+    <!-- Current reading metric cards -->
+    <div class="grid4" id="ajman-metrics" style="margin-bottom:12px;"></div>
+    <!-- Dual chart -->
+    <div class="grid2">
+      <div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">For Sale — listing count trend</div>
+        <div class="cw" style="height:150px;"><canvas id="ajmanSaleChart"></canvas></div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">For Rent — listing count trend</div>
+        <div class="cw" style="height:150px;"><canvas id="ajmanRentChart"></canvas></div>
+      </div>
+    </div>
+    <div class="src" style="margin-top:8px;">Source: bayut.com/for-sale/property/ajman/ · bayut.com/to-rent/property/ajman/ — read daily · Rising for-sale = seller pressure on Al Zorah exit</div>
+  </div>
+
+  <!-- ROW 6: Sale-to-Rent Ratio trend -->
+  <div class="card">
+    <div class="st">Ajman Sale-to-Rent Ratio — day by day
+      <span style="font-size:10px;color:var(--muted);font-weight:400;">Higher = more sellers vs renters = exit pressure rising</span>
+    </div>
+    <div class="cw" style="height:150px;"><canvas id="ratioChart"></canvas></div>
+    <div class="src">Ratio = Ajman for-sale ÷ Ajman for-rent · Baseline today: ~1.64 · Watch for sustained move above 2.0</div>
+  </div>
+
+  <!-- ROW 7: Luxury drops trend -->
   <div class="card">
     <div class="st">Luxury drops — daily count trend</div>
     <div class="cw" style="height:150px;"><canvas id="luxChart"></canvas></div>
     <div class="src">Dashed: 1,500 = score 8/10 · 2,500 = score 10/10 (max stress)</div>
   </div>
 
-  <!-- ROW 6: Transactions -->
+  <!-- ROW 8: Transactions -->
   <div class="card">
     <div class="st">UAE transaction history — 2026</div>
     <div class="cw" style="height:145px;margin-bottom:12px;"><canvas id="txChart"></canvas></div>
@@ -181,44 +212,29 @@ const DUB_KEYS   = ['furniture_home','home_appliances','sports','mobiles_tablets
 const DUB_LABELS = ['Furniture & Home','Home Appliances','Sports Equipment','Mobiles & Tablets','Electronics','Computers & Net'];
 const DUB_COLORS = [C.green,C.blue,C.amber,C.coral,C.purple,C.gray];
 
-// Fallback history when uae_history.json not yet on Gist
-const EMPTY_HISTORY = { dubizzle_series:[], bayut_series:[], luxury_drops_series:[], stress_series:[] };
+const EMPTY_HISTORY = { dubizzle_series:[], bayut_series:[], luxury_drops_series:[], stress_series:[], ajman_property_series:[] };
 
 let charts = {};
 const $ = id => document.getElementById(id);
 const fmt = n => n!=null ? Number(n).toLocaleString() : '—';
 const fmtDate = e => { const d=new Date(e.date); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); };
 
-// ── Fetch from Gist — each file independently so one missing doesn't kill all ─
 async function loadData() {
   const ts = Date.now();
   const warnings = [];
-
-  // Latest data — required
   const r1 = await fetch(`${GIST}/uae_market_data.json?t=${ts}`);
   if (!r1.ok) throw new Error(`Gist fetch failed (${r1.status}) — has scorer.py run yet?`);
   const latest = await r1.json();
-
-  // Check if it's the placeholder
-  if (latest.status === 'initializing') {
-    warnings.push('⚠ Gist has placeholder data — run scorer.py on your PC to push real data.');
-  }
-
-  // History — optional, use empty fallback if missing
+  if (latest.status === 'initializing') warnings.push('⚠ Gist has placeholder data — run scorer.py on your PC to push real data.');
   let history = EMPTY_HISTORY;
   try {
     const r2 = await fetch(`${GIST}/uae_history.json?t=${ts}`);
-    if (r2.ok) {
-      history = await r2.json();
-    } else {
-      warnings.push('ℹ History file not on Gist yet — run scorer.py to push it. Charts will show once data exists.');
-    }
-  } catch { warnings.push('ℹ History file unavailable — charts will populate after scorer.py runs.'); }
-
+    if (r2.ok) history = await r2.json();
+    else warnings.push('ℹ History file not on Gist yet — run scorer.py to push it.');
+  } catch { warnings.push('ℹ History file unavailable.'); }
   return { latest, history, warnings };
 }
 
-// ── Gauge ─────────────────────────────────────────────────────────────────────
 function updateGauge(score) {
   const cx=110,cy=108,r=88,startA=218,sweep=284;
   const polar=d=>{const rad=(d-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)};};
@@ -234,7 +250,6 @@ function updateGauge(score) {
   $('gauge-num').style.color=col;
 }
 
-// ── Stress calc ───────────────────────────────────────────────────────────────
 function calcStress(latest) {
   const tx=latest.historical_tx||[],last=tx[tx.length-1],ref=tx[0]?.count||1;
   const txPct=last?(last.count-ref)/ref*100:0;
@@ -245,8 +260,13 @@ function calcStress(latest) {
   const bScr=avg>=30?20:avg>=15?15:avg>=5?10:5;
   const alz=latest.alzorah||{},bench=latest.benchmark_property||{};
   const lc=alz.listing_count||0,bChg=bench.price_change_pct||0;
-  const cLst=lc>40?6:lc>20?4:lc>10?2:1,cBen=bChg<-5?9:bChg<-2?6:bChg<0?4:bChg===0?2:1;
-  const cScr=Math.min(cLst+cBen,15);
+  // C subscore now includes Ajman sale pressure
+  const ajSale=latest.ajman_for_sale||0, ajRent=latest.ajman_for_rent||0;
+  const ratio=ajRent>0?ajSale/ajRent:0;
+  const cRatio=ratio>=2.5?4:ratio>=2.0?3:ratio>=1.5?2:1;
+  const cLst=lc>40?3:lc>20?2:lc>10?1:0;
+  const cBen=bChg<-5?8:bChg<-2?5:bChg<0?3:bChg===0?1:0;
+  const cScr=Math.min(cLst+cBen+cRatio,15);
   const lux=latest.luxury_drops||{},dc=lux.drop_count||0;
   const dScr=dc>=2500?10:dc>=1500?8:dc>=1000?6:dc>=500?4:2;
   const total=aScr+bScr+cScr+dScr+5+4+10;
@@ -254,18 +274,17 @@ function calcStress(latest) {
   const hyte=total<55?'Hold / markup':total<70?'Controlled clearance':total<80?'Aggressive clearance':'Exit / cash convert';
   const alzM=total<50?'Hold fully':total<65?'Improve selectively then sell':total<75?'Partial exit':'Urgent sale';
   return {
-    total,band,hyte_mode:hyte,alzorah_mode:alzM,dScr,
+    total,band,hyte_mode:hyte,alzorah_mode:alzM,dScr,ratio,
     subscores:{
       A_transactions:{score:aScr,max:25,note:last?`${last.period}: ${fmt(last.count)} (${txPct.toFixed(1)}% vs ${tx[0]?.period})`:''},
       B_dubizzle:    {score:bScr,max:20,note:`Avg ${avg>=0?'+':''}${avg.toFixed(1)}% vs baseline`},
-      C_alzorah:     {score:cScr,max:15,note:`${lc} listings · AED ${bench.price_aed_m||'?'}M · ${bench.flag||'—'}`},
-      D_liquidation: {score:dScr,max:10,note:`${fmt(dc)} luxury drops · ${lux.avg_drop_pct||'—'}% avg · −AED ${lux.total_dropped_aed_m||'—'}M`},
+      C_alzorah:     {score:cScr,max:15,note:`D9: ${lc} listings · Bench: AED ${bench.price_aed_m||'?'}M · Ratio: ${ratio.toFixed(2)}`},
+      D_liquidation: {score:dScr,max:10,note:`${fmt(dc)} drops · ${lux.avg_drop_pct||'—'}% avg · −AED ${lux.total_dropped_aed_m||'—'}M`},
       E_logistics:{score:5,max:10},F_sentiment:{score:4,max:10},G_macro:{score:10,max:10},
     }
   };
 }
 
-// ── Sub-scores ────────────────────────────────────────────────────────────────
 function renderSubscores(stress) {
   const names={A_transactions:'A — Transactions',B_dubizzle:'B — Dubizzle',C_alzorah:'C — Al Zorah',D_liquidation:'D — Lux drops',E_logistics:'E — Logistics',F_sentiment:'F — Sentiment',G_macro:'G — Macro'};
   const order=['A_transactions','B_dubizzle','C_alzorah','D_liquidation','E_logistics','F_sentiment','G_macro'];
@@ -276,9 +295,8 @@ function renderSubscores(stress) {
   }).join('');
 }
 
-// ── Luxury ────────────────────────────────────────────────────────────────────
 function renderLuxury(lux,dScr) {
-  if(!lux){$('lux-metrics').innerHTML='<div style="color:var(--muted);font-size:11px;grid-column:1/-1;">No luxury drops data yet — will populate after daily scrape.</div>';return;}
+  if(!lux){$('lux-metrics').innerHTML='<div style="color:var(--muted);font-size:11px;grid-column:1/-1;">No luxury drops data yet.</div>';return;}
   const dc=lux.drop_count||0,avg=lux.avg_drop_pct||0,tot=lux.total_dropped_aed_m||0,wat=lux.watching_k||0;
   $('lux-metrics').innerHTML=`
     <div class="mc"><div class="lbl">Drop count</div><div class="val" style="color:${C.red};">${fmt(dc)}</div><div class="sub">detected today</div></div>
@@ -290,40 +308,105 @@ function renderLuxury(lux,dScr) {
   const dp=$('lux-d-pill');dp.textContent=`D score: ${dScr}/10`;dp.className='pill '+(dScr>=8?'p-red':dScr>=6?'p-warn':'p-ok');
 }
 
-// ── Charts ────────────────────────────────────────────────────────────────────
+// ── NEW: Ajman Property Market ───────────────────────────────────────────────
+function renderAjmanMetrics(latest, series, ratio) {
+  const sale = latest.ajman_for_sale || 0;
+  const rent = latest.ajman_for_rent || 0;
+  const prevSale = series.length>=2 ? series[series.length-2]?.ajman_for_sale : null;
+  const prevRent = series.length>=2 ? series[series.length-2]?.ajman_for_rent : null;
+  const saleChg  = prevSale && sale ? ((sale-prevSale)/prevSale*100).toFixed(1) : null;
+  const rentChg  = prevRent && rent ? ((rent-prevRent)/prevRent*100).toFixed(1) : null;
+  const ratioPrev= series.length>=2 && series[series.length-2]?.ajman_for_sale && series[series.length-2]?.ajman_for_rent
+    ? (series[series.length-2].ajman_for_sale / series[series.length-2].ajman_for_rent).toFixed(2) : null;
+
+  $('ajman-metrics').innerHTML=`
+    <div class="mc"><div class="lbl">For Sale — Ajman (Bayut)</div>
+      <div class="val" style="color:${C.amber};">${fmt(sale)}</div>
+      <div class="sub">${saleChg!==null?`${Number(saleChg)>=0?'+':''}${saleChg}% vs yesterday`:'First reading'}</div>
+    </div>
+    <div class="mc"><div class="lbl">For Rent — Ajman (Bayut)</div>
+      <div class="val" style="color:${C.blue};">${fmt(rent)}</div>
+      <div class="sub">${rentChg!==null?`${Number(rentChg)>=0?'+':''}${rentChg}% vs yesterday`:'First reading'}</div>
+    </div>
+    <div class="mc"><div class="lbl">Sale-to-Rent Ratio</div>
+      <div class="val" style="color:${ratio>=2.5?C.red:ratio>=2.0?C.amber:C.teal};">${ratio>0?ratio.toFixed(2):'—'}</div>
+      <div class="sub">${ratioPrev?`Was ${ratioPrev} yesterday`:''} · Watch for >2.0</div>
+    </div>
+    <div class="mc"><div class="lbl">Ratio signal</div>
+      <div class="val" style="font-size:14px;line-height:1.4;color:${ratio>=2.5?C.red:ratio>=2.0?C.amber:C.teal};">${ratio>=2.5?'⚠ High seller pressure':ratio>=2.0?'Rising pressure':ratio>=1.5?'Elevated':'Normal'}</div>
+      <div class="sub">For C subscore: ${ratio>=2.5?'4/4 pts':ratio>=2.0?'3/4 pts':ratio>=1.5?'2/4 pts':'1/4 pts'}</div>
+    </div>`;
+
+  // Ratio pill in header
+  const pill = $('ajman-ratio-pill');
+  pill.textContent = `Sale:Rent = ${ratio>0?ratio.toFixed(2):'—'}`;
+  pill.className = 'pill ' + (ratio>=2.5?'p-red':ratio>=2.0?'p-warn':'p-ok');
+}
+
+function renderAjmanCharts(series) {
+  if(!series || !series.length) {
+    emptyLineChart('ajmanSaleChart','For Sale',C.amber);
+    emptyLineChart('ajmanRentChart','For Rent',C.blue);
+    emptyLineChart('ratioChart','Ratio',C.purple);
+    return;
+  }
+  const labels = series.map(fmtDate);
+
+  mkChart('ajmanSaleChart',{type:'line',data:{labels,datasets:[{
+    label:'For Sale',data:series.map(e=>e.ajman_for_sale??null),
+    borderColor:C.amber,backgroundColor:C.amber+'18',borderWidth:2,
+    pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true
+  }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+    tooltip:{callbacks:{label:c=>` ${fmt(c.parsed.y)} listings`}}},
+    scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},
+    y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10},callback:v=>(v/1000).toFixed(0)+'k'},suggestedMin:70000}}}});
+
+  mkChart('ajmanRentChart',{type:'line',data:{labels,datasets:[{
+    label:'For Rent',data:series.map(e=>e.ajman_for_rent??null),
+    borderColor:C.blue,backgroundColor:C.blue+'18',borderWidth:2,
+    pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true
+  }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+    tooltip:{callbacks:{label:c=>` ${fmt(c.parsed.y)} listings`}}},
+    scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},
+    y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10},callback:v=>(v/1000).toFixed(0)+'k'},suggestedMin:40000}}}});
+
+  // Ratio trend
+  const ratios = series.map(e=>(e.ajman_for_sale&&e.ajman_for_rent)?+(e.ajman_for_sale/e.ajman_for_rent).toFixed(3):null);
+  mkChart('ratioChart',{type:'line',data:{labels,datasets:[
+    {label:'Sale:Rent ratio',data:ratios,borderColor:C.purple,backgroundColor:C.purple+'18',borderWidth:2,pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true},
+    {label:'Watch level (2.0)',data:series.map(()=>2.0),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+    {label:'Alert level (2.5)',data:series.map(()=>2.5),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+    tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y}`}}},
+    scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},
+    y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}},min:1.0,max:3.5}}}});
+}
+
 function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart($(id),cfg);}
 const sc=cb=>({x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:11}}},y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:11},callback:cb}}});
-
-function emptyLineChart(id, label, color) {
-  // Show a placeholder chart with no data points but axes visible
-  mkChart(id,{type:'line',data:{labels:['Waiting for data…'],datasets:[{label,data:[null],borderColor:color,borderWidth:2,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}},min:0}}}});
-}
+function emptyLineChart(id,label,color){mkChart(id,{type:'line',data:{labels:['Waiting for data…'],datasets:[{label,data:[null],borderColor:color,borderWidth:2,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}},min:0}}}});}
 
 function renderDubChart(series) {
   const leg=$('dub-leg');leg.innerHTML='';
   DUB_LABELS.forEach((l,i)=>{const d=document.createElement('div');d.className='li';d.innerHTML=`<span class="ld" style="background:${DUB_COLORS[i]};"></span>${l}`;leg.appendChild(d);});
-  if(!series.length){emptyLineChart('dubChart','Listings',C.green);$('dub-note').textContent='No data yet — populates after first Dubizzle scrape.';return;}
+  if(!series.length){emptyLineChart('dubChart','Listings',C.green);$('dub-note').textContent='No data yet.';return;}
   mkChart('dubChart',{type:'line',data:{labels:series.map(fmtDate),datasets:DUB_KEYS.map((k,i)=>({label:DUB_LABELS[i],data:series.map(e=>e[k]??null),borderColor:DUB_COLORS[i],backgroundColor:DUB_COLORS[i]+'18',borderWidth:2,pointRadius:series.length===1?5:3,pointHoverRadius:6,tension:0.35,fill:false,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.parsed.y)}`}}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});
   const last=series[series.length-1];
   if(last)$('dub-note').textContent='Latest: '+DUB_KEYS.slice(0,3).map((k,i)=>`${DUB_LABELS[i]}: ${fmt(last[k])}`).join(' · ');
 }
 
 function renderD9Chart(series) {
-  if(!series.length){emptyLineChart('d9Chart','Properties',C.blue);$('d9-note').textContent='No data yet — populates after first daily scrape.';return;}
+  if(!series.length){emptyLineChart('d9Chart','Properties',C.blue);$('d9-note').textContent='No data yet.';return;}
   mkChart('d9Chart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Properties',data:series.map(e=>e.district9_listings??null),borderColor:C.blue,backgroundColor:C.blue+'22',borderWidth:2,pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} properties`}}},scales:{x:sc().x,y:{...sc().y,min:0,suggestedMax:60}}}});
   $('d9-note').textContent=`Latest: ${series[series.length-1]?.district9_listings??'—'} properties · read once daily`;
 }
 
 function renderBenchChart(series,latest) {
   $('bench-title').textContent=latest?.benchmark_property?.title||'Semi-Detached Villa · Corner Type D · District 9';
-  if(!series.length){emptyLineChart('benchChart','AED M',C.coral);$('bench-note').textContent='No data yet — populates after first daily scrape.';return;}
+  if(!series.length){emptyLineChart('benchChart','AED M',C.coral);$('bench-note').textContent='No data yet.';return;}
   mkChart('benchChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'AED M',data:series.map(e=>e.benchmark_price_aed?+(e.benchmark_price_aed/1e6).toFixed(3):null),borderColor:C.coral,backgroundColor:C.coral+'18',borderWidth:2,pointRadius:series.length===1?5:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` AED ${c.parsed.y.toFixed(3)}M`}}},scales:{x:sc().x,y:{...sc().y,callback:v=>'AED '+v.toFixed(1)+'M',min:2.5,max:4.0}}}});
   const bench=latest?.benchmark_property;
-  if(bench){
-    const flag=bench.flag||'NO CHANGE',col=flag.includes('DROP')?C.red:flag.includes('RISE')?C.amber:C.teal;
-    const chg=bench.price_change_pct!=null?` (${bench.price_change_pct>0?'+':''}${bench.price_change_pct}%)`:'';
-    $('bench-note').innerHTML=`<span style="color:${col};">${flag}${chg}</span> · <span style="color:var(--muted);">AED ${bench.price_aed_m}M · read once daily</span>`;
-  }
+  if(bench){const flag=bench.flag||'NO CHANGE',col=flag.includes('DROP')?C.red:flag.includes('RISE')?C.amber:C.teal;const chg=bench.price_change_pct!=null?` (${bench.price_change_pct>0?'+':''}${bench.price_change_pct}%)`:'';$('bench-note').innerHTML=`<span style="color:${col};">${flag}${chg}</span> · <span style="color:var(--muted);">AED ${bench.price_aed_m}M · read once daily</span>`;}
 }
 
 function renderLuxChart(series) {
@@ -338,29 +421,21 @@ function renderLuxChart(series) {
 function renderTxChart(txData) {
   if(!txData?.length)return;
   mkChart('txChart',{type:'bar',data:{labels:txData.map(t=>t.period),datasets:[{data:txData.map(t=>t.count),backgroundColor:txData.map((_,i)=>i===txData.length-1?C.red:C.green),borderRadius:4,barPercentage:0.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.parsed.y)} transactions`}}},scales:{x:sc().x,y:{...sc().y,callback:v=>v.toLocaleString(),min:10000,suggestedMax:20000}}}});
-  $('tx-cards').innerHTML=txData.map((t,i)=>{
-    const isLast=i===txData.length-1,prev=i>0?txData[i-1].count:null;
-    const chg=prev?(((t.count-prev)/prev)*100).toFixed(1):null;
-    const col=isLast?`color:${C.red};`:'',bdr=isLast?`border:0.5px solid rgba(226,75,74,.35);`:'';
-    return `<div class="mc" style="${bdr}"><div class="lbl">${t.period}</div><div class="val" style="font-size:18px;${col}">${fmt(t.count)}</div><div class="sub" style="${col}">AED ${t.value_aed_b}B · ${fmt(t.units)} units${chg?' · '+(Number(chg)>0?'+':'')+chg+'%':''}</div></div>`;
-  }).join('');
+  $('tx-cards').innerHTML=txData.map((t,i)=>{const isLast=i===txData.length-1,prev=i>0?txData[i-1].count:null;const chg=prev?(((t.count-prev)/prev)*100).toFixed(1):null;const col=isLast?`color:${C.red};`:'',bdr=isLast?`border:0.5px solid rgba(226,75,74,.35);`:'';return `<div class="mc" style="${bdr}"><div class="lbl">${t.period}</div><div class="val" style="font-size:18px;${col}">${fmt(t.count)}</div><div class="sub" style="${col}">AED ${t.value_aed_b}B · ${fmt(t.units)} units${chg?' · '+(Number(chg)>0?'+':'')+chg+'%':''}</div></div>`;}).join('');
 }
 
 function pillCls(band){return band?.includes('Normal')||band?.includes('Mild')?'p-ok':band?.includes('Clear')?'p-warn':'p-red';}
 
-// ── Main render ───────────────────────────────────────────────────────────────
 async function render() {
   try {
     const {latest,history,warnings}=await loadData();
-
     $('loading').style.display='none';
     $('dash').style.display='flex';
-
-    // Show warnings if any
     $('warn-area').innerHTML=warnings.map(w=>`<div class="warn-box">${w}</div>`).join('');
 
     const stress=latest.stress_index||calcStress(latest);
     const dScr=stress.subscores?.D_liquidation?.score??stress.dScr??0;
+    const ratio=stress.ratio??(latest.ajman_for_sale&&latest.ajman_for_rent?latest.ajman_for_sale/latest.ajman_for_rent:0);
 
     const now=new Date();
     $('hdr-sub').innerHTML=`<span class="pulse"></span>Checked: ${now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · ${now.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}`;
@@ -373,31 +448,25 @@ async function render() {
     renderDubChart(history.dubizzle_series||[]);
     renderD9Chart(history.bayut_series||[]);
     renderBenchChart(history.bayut_series||[],latest);
+
+    // Ajman property
+    const ajSeries = history.ajman_property_series||[];
+    renderAjmanMetrics(latest, ajSeries, ratio);
+    renderAjmanCharts(ajSeries);
+
     renderLuxChart(history.luxury_drops_series||[]);
     renderTxChart(latest.historical_tx||[]);
     $('last-updated').textContent=`Collected: ${latest.collected_at?new Date(latest.collected_at).toLocaleString('en-GB'):'—'} · Scored: ${latest.scored_at?new Date(latest.scored_at).toLocaleString('en-GB'):'—'}`;
 
   } catch(e) {
-    $('loading').innerHTML=`
-      <div style="color:${C.red};font-size:13px;text-align:center;">${e.message}</div>
-      <div style="color:var(--muted);font-size:11px;margin-top:8px;text-align:center;">
-        Run this on your PC:<br>
-        <code style="background:var(--surface);padding:4px 8px;border-radius:4px;margin-top:6px;display:inline-block;">
-          C:\\uae_monitor\\venv\\Scripts\\python.exe C:\\uae_monitor\\scorer.py
-        </code>
-      </div>`;
+    $('loading').innerHTML=`<div style="color:${C.red};font-size:13px;text-align:center;">${e.message}</div><div style="color:var(--muted);font-size:11px;margin-top:8px;text-align:center;">Run: <code style="background:var(--surface);padding:4px 8px;border-radius:4px;">C:\\uae_monitor\\venv\\Scripts\\python.exe C:\\uae_monitor\\scorer.py</code></div>`;
     console.error(e);
   }
 }
 
-// ── Countdown ─────────────────────────────────────────────────────────────────
 let nextAt=Date.now()+REFRESH_MS;
-setInterval(()=>{
-  const s=Math.max(0,Math.round((nextAt-Date.now())/1000)),m=Math.floor(s/60);
-  $('next-tick').textContent=`Next refresh in ${m}:${String(s%60).padStart(2,'0')}`;
-},1000);
+setInterval(()=>{const s=Math.max(0,Math.round((nextAt-Date.now())/1000)),m=Math.floor(s/60);$('next-tick').textContent=`Next refresh in ${m}:${String(s%60).padStart(2,'0')}`;},1000);
 setInterval(()=>{nextAt=Date.now()+REFRESH_MS;render();},REFRESH_MS);
-
 render();
 </script>
 </body>
