@@ -270,7 +270,11 @@ const crawler = new PlaywrightCrawler({
 await crawler.run(
   TARGETS.map(t => ({
     url: t.url,
-    userData: { id: t.id }
+    userData: { id: t.id },
+    // 👇 This is the key
+    proxyConfiguration: t.id === 'luxury'
+      ? undefined // no UAE restriction
+      : { countryCode: 'AE' }
   }))
 );
 
