@@ -93,10 +93,20 @@ function computeStress(r) {
 
 const crawler = new PlaywrightCrawler({
   proxyConfiguration: await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' }),
-  maxRequestRetries: 3,
-  navigationTimeoutSecs: 60,
-  requestHandlerTimeoutSecs: 90,
-
+  maxConcurrency: 1,
+  maxRequestRetries: 1,
+  navigationTimeoutSecs: 120,
+  requestHandlerTimeoutSecs: 150,
+  launchContext: {
+    launchOptions: {
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+      ]
+    }
+  },
   async requestHandler({ request, page, log }) {
     const { id } = request.userData;
     log.info('Scraping: ' + id);
