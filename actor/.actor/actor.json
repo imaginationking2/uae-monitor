@@ -11,6 +11,7 @@
     "properties": {
       "includeDebug": {
         "title": "Include debug info",
+        "description": "Whether to include debug logs and extra details in the output",
         "type": "boolean",
         "default": false
       }
