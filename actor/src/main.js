@@ -108,30 +108,66 @@ const crawler = new PlaywrightCrawler({
     }
   },
   async requestHandler({ request, page, log }) {
-    const { id } = request.userData;
-    log.info('Scraping: ' + id);
-    await page.waitForLoadState('domcontentloaded');
-    await sleep(2000 + Math.random() * 2000);
-    const title = await page.title();
-    if (/captcha|robot|blocked|challenge/i.test(title)) throw new Error('CAPTCHA on ' + id);
-    const body = await page.evaluate(() => document.body.innerText);
-    let parsed = null;
-    switch (id) {
-      case 'dubizzle':          parsed = parseDubizzle(body); results.dubizzle = parsed; break;
-      case 'bayut_d9':          parsed = parseBayutD9(body);  results.bayut_d9 = parsed; break;
-      case 'bayut_ajman_sale':  parsed = parseBayutCount(body); results.bayut_ajman_sale = parsed; break;
-      case 'bayut_ajman_rent':  parsed = parseBayutCount(body); results.bayut_ajman_rent = parsed; break;
-      case 'benchmark':         parsed = parseBenchmark(title); results.benchmark = parsed; break;
-      case 'luxury':            parsed = parseLuxury(title, body); results.luxury = parsed; break;
-    }
-    if (!parsed) throw new Error(id + ' parse failed');
-    log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 100));
-  },
-  failedRequestHandler({ request, error }) {
-    results.errors.push({ source: request.userData.id, error: error.message });
-  }
-});
+  const { id } = request.userData;
+  log.info('Scraping: ' + id);
 
+  await page.route('**/*', route => {
+    const type = route.request().resourceType();
+    if (['image', 'font', 'media'].includes(type)) {
+      return route.abort();
+    }
+    return route.continue();
+  });
+
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+  await sleep(3000);
+
+  const title = await page.title();
+
+  if (/captcha|robot|blocked|challenge/i.test(title)) {
+    throw new Error('CAPTCHA on ' + id);
+  }
+
+  const body = await page.evaluate(() => document.body.innerText);
+
+  let parsed = null;
+
+  switch (id) {
+    case 'dubizzle':
+      parsed = parseDubizzle(body);
+      results.dubizzle = parsed;
+      break;
+
+    case 'bayut_d9':
+      parsed = parseBayutD9(body);
+      results.bayut_d9 = parsed;
+      break;
+
+    case 'bayut_ajman_sale':
+      parsed = parseBayutCount(body);
+      results.bayut_ajman_sale = parsed;
+      break;
+
+    case 'bayut_ajman_rent':
+      parsed = parseBayutCount(body);
+      results.bayut_ajman_rent = parsed;
+      break;
+
+    case 'benchmark':
+      parsed = parseBenchmark(title);
+      results.benchmark = parsed;
+      break;
+
+    case 'luxury':
+      parsed = parseLuxury(title, body);
+      results.luxury = parsed;
+      break;
+  }
+
+  if (!parsed) throw new Error(id + ' parse failed');
+
+  log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 100));
+},
 await crawler.run(TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
