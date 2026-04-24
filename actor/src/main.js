@@ -167,7 +167,6 @@ function computeStress(r) {
 const crawler = new PlaywrightCrawler({
   proxyConfiguration: await Actor.createProxyConfiguration({
     groups: ['RESIDENTIAL'],
-    countryCode: 'AE'
   }),
 
   maxConcurrency: 1,
