@@ -1,8 +1,9 @@
 {
   "name": "uae-market-collector",
   "version": "1.0.0",
-  "type": "module",
+  "description": "UAE Market Monitor — scrapes Dubizzle, Bayut, LuxuryPriceDrops daily",
   "main": "src/main.js",
+  "type": "module",
   "scripts": {
     "start": "node src/main.js"
   },
