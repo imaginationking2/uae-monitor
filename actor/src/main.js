@@ -21,12 +21,8 @@ const TARGETS = [
   { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
 
-// ── Parsers ─────────────────────────────────────────────────────────────────
-
 function parseDubizzle(bodyText) {
   const lines = bodyText.split('\n').map(l => l.trim()).filter(Boolean);
-  
-  // Strategy 1: exact category name followed by count on next line
   const catMap = {
     'FURNITURE, HOME & GARDEN': 'furniture_home',
     'HOME APPLIANCES': 'home_appliances',
@@ -38,31 +34,25 @@ function parseDubizzle(bodyText) {
   const out = {};
   for (let i = 0; i < lines.length - 1; i++) {
     const key = catMap[lines[i].toUpperCase()];
-    if (key && /^[\d,]+$/.test(lines[i + 1])) {
+    if (key && /^[\d,]+$/.test(lines[i + 1]))
       out[key] = parseInt(lines[i + 1].replace(/,/g, ''));
-    }
   }
   if (Object.keys(out).length >= 4) return out;
-
-  // Strategy 2: look for numbers near category keywords anywhere in text
   const text = bodyText.toUpperCase();
   const patterns = [
-    { key: 'furniture_home',  re: /FURNITURE[^0-9]{0,50}([\d,]{3,})/s },
-    { key: 'home_appliances', re: /HOME APPLIAN[^0-9]{0,50}([\d,]{3,})/s },
-    { key: 'sports',          re: /SPORTS EQUIP[^0-9]{0,50}([\d,]{3,})/s },
-    { key: 'mobiles_tablets', re: /MOBILE PHONE[^0-9]{0,50}([\d,]{3,})/s },
-    { key: 'electronics',     re: /ELECTRONICS[^0-9]{0,50}([\d,]{3,})/s },
-    { key: 'computers',       re: /COMPUTERS[^0-9]{0,50}([\d,]{3,})/s }
+    { key: 'furniture_home',  re: /FURNITURE[^0-9]{0,50}(\d[\d,]+)/s },
+    { key: 'home_appliances', re: /HOME APPLIAN[^0-9]{0,50}(\d[\d,]+)/s },
+    { key: 'sports',          re: /SPORTS EQUIP[^0-9]{0,50}(\d[\d,]+)/s },
+    { key: 'mobiles_tablets', re: /MOBILE PHONE[^0-9]{0,50}(\d[\d,]+)/s },
+    { key: 'electronics',     re: /ELECTRONICS[^0-9]{0,50}(\d[\d,]+)/s },
+    { key: 'computers',       re: /COMPUTERS[^0-9]{0,50}(\d[\d,]+)/s }
   ];
   const out2 = {};
   for (const { key, re } of patterns) {
     const m = text.match(re);
     if (m) out2[key] = parseInt(m[1].replace(/,/g, ''));
   }
-  if (Object.keys(out2).length >= 4) return out2;
-
-  // Strategy 3: scrape via page DOM directly (passed as JSON from page.evaluate)
-  return null;
+  return Object.keys(out2).length >= 4 ? out2 : null;
 }
 
 function parseBayutCount(bodyText) {
@@ -70,7 +60,6 @@ function parseBayutCount(bodyText) {
   const lines = bodyText.split('\n').map(l => l.trim()).filter(Boolean);
   const cl = lines.find(l => /\d+ to \d+ of [\d,]+ Propert/i.test(l));
   if (cl) return parseInt(cl.match(/of ([\d,]+)/)?.[1]?.replace(/,/g, ''));
-  // fallback: find any "X Properties" pattern
   const m = bodyText.match(/(\d[\d,]+)\s+Propert/i);
   return m ? parseInt(m[1].replace(/,/g, '')) : null;
 }
@@ -125,8 +114,6 @@ function computeStress(r) {
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
-// ── Proxy config ─────────────────────────────────────────────────────────────
-// Try residential AE proxy; Dubizzle works without proxy (UAE CDN serves globally)
 let proxyConfiguration;
 try {
   proxyConfiguration = await Actor.createProxyConfiguration({
@@ -138,94 +125,48 @@ try {
   proxyConfiguration = undefined;
 }
 
-// ── Crawler ───────────────────────────────────────────────────────────────────
 const crawler = new PlaywrightCrawler({
   proxyConfiguration,
-  // Dubizzle doesn't need AE proxy — use no-proxy fallback if AE fails
-  proxyRotationProtocol: 'PER_REQUEST',
   maxRequestRetries: 3,
   navigationTimeoutSecs: 90,
   requestHandlerTimeoutSecs: 120,
-  // Keep concurrency at 1 to avoid memory overload on 2GB container
   maxConcurrency: 1,
-  // Use less memory per page by reusing browser context
   launchContext: {
     launchOptions: {
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',  // fixes shared memory crashes
+        '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--js-flags=--max-old-space-size=512'  // limit V8 heap
+        '--js-flags=--max-old-space-size=512'
       ]
     }
   },
 
   async requestHandler({ request, page, log }) {
     const { id } = request.userData;
-    log.info(`Scraping: ${id} — ${request.url}`);
-
-    // Wait for full network idle to ensure content loaded
+    log.info('Scraping: ' + id + ' — ' + request.url);
     try {
       await page.waitForLoadState('networkidle', { timeout: 30000 });
     } catch {
-      // If networkidle times out, fall back to domcontentloaded + extra wait
       await page.waitForLoadState('domcontentloaded');
       await sleep(3000);
     }
-
-    // Extra wait + human-like delay
     await sleep(1500 + Math.random() * 1500);
-
-    // Check for CAPTCHA / bot wall
     const title = await page.title();
     const url = page.url();
     if (/captcha|robot|blocked|challenge/i.test(title) || url.includes('captchaChallenge')) {
-      throw new Error(`CAPTCHA detected on ${id}: ${title}`);
+      throw new Error('CAPTCHA detected on ' + id + ': ' + title);
     }
-
-    // Get body text safely
-    const bodyText = await page.evaluate(() => {
-      return document.body ? document.body.innerText : null;
-    });
-
-    if (!bodyText) throw new Error(`Empty body on ${id}`);
-
+    const bodyText = await page.evaluate(() => document.body ? document.body.innerText : null);
+    if (!bodyText) throw new Error('Empty body on ' + id);
     let parsed = null;
-
     switch (id) {
       case 'dubizzle': {
-        // First try text parsing
         parsed = parseDubizzle(bodyText);
         if (!parsed) {
-          // Fallback: extract counts via DOM selectors directly in page
           parsed = await page.evaluate(() => {
             const result = {};
-            const catMap = {
-              'furniture': 'furniture_home',
-              'home appliances': 'home_appliances',
-              'sports': 'sports',
-              'mobile': 'mobiles_tablets',
-              'electronics': 'electronics',
-              'computers': 'computers'
-            };
-            // Try finding elements with category names and nearby numbers
-            document.querySelectorAll('a, h3, h4, div, span').forEach(el => {
-              const text = el.textContent?.trim().toLowerCase() || '';
-              for (const [keyword, key] of Object.entries(catMap)) {
-                if (text.startsWith(keyword) && text.length < 60) {
-                  // Look for a sibling or nearby element with a number
-                  const parent = el.parentElement;
-                  if (parent) {
-                    const nums = parent.textContent.match(/[\d,]{4,}/g);
-                    if (nums && !result[key]) {
-                      result[key] = parseInt(nums[0].replace(/,/g, ''));
-                    }
-                  }
-                }
-              }
-            });
-            // Also try finding category counts from page text patterns
             const allText = document.body.innerText;
             const lines = allText.split('\n').filter(l => l.trim());
             for (let i = 0; i < lines.length - 1; i++) {
@@ -241,50 +182,42 @@ const crawler = new PlaywrightCrawler({
             return Object.keys(result).length >= 3 ? result : null;
           });
         }
-        if (!parsed) throw new Error('dubizzle parse failed — no category data found');
+        if (!parsed) throw new Error('dubizzle parse failed');
         results.dubizzle = parsed;
         break;
       }
-
       case 'bayut_d9':
         parsed = parseBayutD9(bodyText);
         if (!parsed) throw new Error('bayut_d9 parse failed');
         results.bayut_d9 = parsed;
         break;
-
       case 'bayut_ajman_sale':
         parsed = parseBayutCount(bodyText);
         if (!parsed) throw new Error('bayut_ajman_sale parse failed');
         results.bayut_ajman_sale = parsed;
         break;
-
       case 'bayut_ajman_rent':
         parsed = parseBayutCount(bodyText);
         if (!parsed) throw new Error('bayut_ajman_rent parse failed');
         results.bayut_ajman_rent = parsed;
         break;
-
       case 'benchmark':
         parsed = parseBenchmark(title);
         if (!parsed) throw new Error('benchmark parse failed');
         results.benchmark = parsed;
         break;
-
       case 'luxury':
         parsed = parseLuxury(title, bodyText);
         if (!parsed) throw new Error('luxury parse failed');
         results.luxury = parsed;
         break;
     }
-
-    log.info(`✓ ${id}: ${JSON.stringify(parsed).substring(0, 150)}`);
-
-    // Close page after each scrape to free memory
+    log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 150));
     await page.close();
   },
 
   failedRequestHandler({ request, log, error }) {
-    log.error(`✗ ${request.userData.id} failed permanently: ${error.message}`);
+    log.error('FAILED ' + request.userData.id + ': ' + error.message);
     results.errors.push({ source: request.userData.id, error: error.message });
   }
 });
@@ -292,10 +225,8 @@ const crawler = new PlaywrightCrawler({
 await crawler.run(TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
-
 const output = {
-  date: TODAY,
-  scraped_at: SCRAPED_AT,
+  date: TODAY, scraped_at: SCRAPED_AT,
   stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
   dubizzle_entry: results.dubizzle ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle } : null,
   bayut_entry: results.bayut_d9 ? {
@@ -316,9 +247,7 @@ const output = {
   success: results.errors.length === 0
 };
 
-console.log('=== OUTPUT ===');
 console.log(JSON.stringify(output, null, 2));
-
 await Actor.pushData(output);
 await Actor.setValue('OUTPUT', output);
 await Actor.exit();
