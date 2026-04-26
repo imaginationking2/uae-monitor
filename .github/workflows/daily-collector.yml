@@ -24,14 +24,13 @@ jobs:
             "https://api.apify.com/v2/acts/${{ secrets.APIFY_ACTOR_ID }}/runs" \
             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{}')
+            -d '{"memory": 4096, "timeout": 900}')
 
           echo "API response: $RUN_RESPONSE"
           RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
           echo "Run ID: $RUN_ID"
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-          # Poll until finished (max 20 min = 120 * 10s)
           STATUS="RUNNING"
           for i in $(seq 1 120); do
             sleep 10
