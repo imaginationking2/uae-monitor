@@ -24,7 +24,7 @@ jobs:
             "https://api.apify.com/v2/acts/${{ secrets.APIFY_ACTOR_ID }}/runs" \
             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"memory": 4096, "timeout": 900}')
+            -d '{}')
 
           echo "API response: $RUN_RESPONSE"
           RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
