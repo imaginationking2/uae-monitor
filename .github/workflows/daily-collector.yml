@@ -13,7 +13,7 @@ on:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     steps:
       - name: Run Apify collector actor
@@ -24,47 +24,96 @@ jobs:
             "https://api.apify.com/v2/acts/${{ secrets.APIFY_ACTOR_ID }}/runs" \
             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"memory": 4096, "timeout": 900}')
+            -d '{"memory": 4096, "timeout": 1800}')
 
           echo "API response: $RUN_RESPONSE"
-          RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
+
+          # Validate we got a run ID back
+          RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              print(d['data']['id'])
+          except Exception as e:
+              print(f'ERROR: {e}', file=sys.stderr)
+              sys.exit(1)
+          ")
           echo "Run ID: $RUN_ID"
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
+          # Poll until finished — 180 iterations x 15s = 45 min max wait
           STATUS="RUNNING"
-          for i in $(seq 1 120); do
-            sleep 10
-            STATUS=$(curl -s \
+          for i in $(seq 1 180); do
+            sleep 15
+            POLL=$(curl -s \
               "https://api.apify.com/v2/actor-runs/$RUN_ID" \
-              -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}" \
-              | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d['status'])")
-            echo "[$i/120] Status: $STATUS"
+              -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
+            STATUS=$(echo "$POLL" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              print(d['data']['status'])
+          except:
+              print('UNKNOWN')
+          ")
+            echo "[$i/180] Status: $STATUS"
             if [[ "$STATUS" == "SUCCEEDED" ]]; then
-              echo "Actor completed successfully."; break
+              echo "Actor completed successfully."
+              break
             elif [[ "$STATUS" == "FAILED" || "$STATUS" == "ABORTED" || "$STATUS" == "TIMED-OUT" ]]; then
-              echo "Actor run failed: $STATUS"; exit 1
+              echo "Actor run failed: $STATUS"
+              exit 1
             fi
           done
 
           if [[ "$STATUS" != "SUCCEEDED" ]]; then
-            echo "Timed out waiting for actor."; exit 1
+            echo "Timed out waiting for actor after 45 min."
+            exit 1
           fi
 
       - name: Fetch actor output
         id: fetch_output
         run: |
           RUN_ID="${{ steps.apify_run.outputs.run_id }}"
+
+          # Wait a moment for output to be written
+          sleep 5
+
           OUTPUT=$(curl -s \
             "https://api.apify.com/v2/actor-runs/$RUN_ID/key-value-store/records/OUTPUT" \
             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
 
-          echo "$OUTPUT" > /tmp/apify_output.json
-          echo "Keys: $(echo "$OUTPUT" | python3 -c "import sys,json; print(list(json.load(sys.stdin).keys()))")"
+          # Validate output is non-empty JSON
+          echo "$OUTPUT" | python3 -c "
+          import sys, json
+          raw = sys.stdin.read().strip()
+          if not raw:
+              print('ERROR: Empty output from Apify', file=sys.stderr)
+              sys.exit(1)
+          try:
+              d = json.loads(raw)
+              print('Output keys:', list(d.keys()))
+          except json.JSONDecodeError as e:
+              print(f'ERROR: Invalid JSON — {e}', file=sys.stderr)
+              print(f'Raw (first 200 chars): {raw[:200]}', file=sys.stderr)
+              sys.exit(1)
+          "
 
-          ERRORS=$(echo "$OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('errors', [])))")
+          echo "$OUTPUT" > /tmp/apify_output.json
+
+          ERRORS=$(echo "$OUTPUT" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          errs = d.get('errors', [])
+          print(len(errs))
+          if errs:
+              for e in errs:
+                  print(f'  - {e[\"source\"]}: {e[\"error\"]}', file=sys.stderr)
+          ")
           echo "Scrape errors: $ERRORS"
           if [ "$ERRORS" -gt "3" ]; then
-            echo "Too many errors ($ERRORS), aborting."; exit 1
+            echo "Too many errors ($ERRORS), aborting."
+            exit 1
           fi
 
       - name: Fetch current Gist history
@@ -78,7 +127,6 @@ jobs:
         run: |
           python3 << 'PYEOF'
           import json
-          from datetime import datetime
 
           with open('/tmp/apify_output.json') as f:
               new_data = json.load(f)
@@ -99,7 +147,9 @@ jobs:
 
           if new_data.get('dubizzle_entry'):
               history['dubizzle_series'] = upsert(history.get('dubizzle_series', []), new_data['dubizzle_entry'])
-              print(f"  dubizzle_series: {len(history['dubizzle_series'])} entries")
+              print(f"  dubizzle_series: {len(history['dubizzle_series'])} entries | latest: {new_data['dubizzle_entry'].get('furniture_home')}")
+          else:
+              print("  WARNING: no dubizzle_entry in output")
 
           if new_data.get('bayut_entry'):
               history['bayut_series'] = upsert(history.get('bayut_series', []), new_data['bayut_entry'])
@@ -130,6 +180,8 @@ jobs:
           errors = new_data.get('errors', [])
           if errors:
               print(f"Errors ({len(errors)}): {[e['source'] for e in errors]}")
+          else:
+              print("No errors — all sources collected successfully.")
           PYEOF
 
       - name: Push updated history to Gist
@@ -151,7 +203,12 @@ jobs:
           echo "$RESPONSE" | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
-          print('Gist updated:', d.get('html_url','error'), '| Updated:', d.get('updated_at','?'))
+          url = d.get('html_url', '')
+          updated = d.get('updated_at', '')
+          if url:
+              print(f'Gist updated: {url} | {updated}')
+          else:
+              print(f'ERROR pushing to Gist: {list(d.keys())}')
           "
 
       - name: Summary
@@ -168,12 +225,14 @@ jobs:
           print(f"Stress: {s.get('total')}/100 — {s.get('band')}")
           print(f"Components: {s.get('components')}")
           dub = d.get('dubizzle_entry') or {}
-          print(f"Dubizzle Furniture/Home: {dub.get('furniture_home','N/A')}")
+          print(f"Dubizzle Furniture/Home: {dub.get('furniture_home', 'MISSING')}")
           lux = d.get('luxury_entry') or {}
-          print(f"Luxury drops: {lux.get('drop_count','N/A')} | max: {lux.get('max_drop_pct','N/A')}%")
+          print(f"Luxury drops: {lux.get('drop_count', 'MISSING')} | max: {lux.get('max_drop_pct', '?')}%")
           ajm = d.get('ajman_entry') or {}
-          print(f"Ajman ratio: {ajm.get('ratio','N/A')}")
+          print(f"Ajman ratio: {ajm.get('ratio', 'MISSING')}")
           errs = d.get('errors', [])
           print(f"Errors: {[e['source'] for e in errs] if errs else 'none'}")
           PYEOF
+          else
+            echo "No output file found — actor may not have completed."
           fi
