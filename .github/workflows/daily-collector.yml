@@ -27,8 +27,6 @@ jobs:
             -d '{"memory": 4096, "timeout": 1800}')
 
           echo "API response: $RUN_RESPONSE"
-
-          # Validate we got a run ID back
           RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "
           import sys, json
           try:
@@ -41,7 +39,6 @@ jobs:
           echo "Run ID: $RUN_ID"
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-          # Poll until finished — 180 iterations x 15s = 45 min max wait
           STATUS="RUNNING"
           for i in $(seq 1 180); do
             sleep 15
@@ -67,7 +64,7 @@ jobs:
           done
 
           if [[ "$STATUS" != "SUCCEEDED" ]]; then
-            echo "Timed out waiting for actor after 45 min."
+            echo "Timed out waiting for actor."
             exit 1
           fi
 
@@ -75,30 +72,24 @@ jobs:
         id: fetch_output
         run: |
           RUN_ID="${{ steps.apify_run.outputs.run_id }}"
-
-          # Wait a moment for output to be written
           sleep 5
-
           OUTPUT=$(curl -s \
             "https://api.apify.com/v2/actor-runs/$RUN_ID/key-value-store/records/OUTPUT" \
             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
 
-          # Validate output is non-empty JSON
           echo "$OUTPUT" | python3 -c "
           import sys, json
           raw = sys.stdin.read().strip()
           if not raw:
-              print('ERROR: Empty output from Apify', file=sys.stderr)
+              print('ERROR: Empty output', file=sys.stderr)
               sys.exit(1)
           try:
               d = json.loads(raw)
               print('Output keys:', list(d.keys()))
           except json.JSONDecodeError as e:
               print(f'ERROR: Invalid JSON — {e}', file=sys.stderr)
-              print(f'Raw (first 200 chars): {raw[:200]}', file=sys.stderr)
               sys.exit(1)
           "
-
           echo "$OUTPUT" > /tmp/apify_output.json
 
           ERRORS=$(echo "$OUTPUT" | python3 -c "
@@ -106,13 +97,10 @@ jobs:
           d = json.load(sys.stdin)
           errs = d.get('errors', [])
           print(len(errs))
-          if errs:
-              for e in errs:
-                  print(f'  - {e[\"source\"]}: {e[\"error\"]}', file=sys.stderr)
           ")
           echo "Scrape errors: $ERRORS"
           if [ "$ERRORS" -gt "3" ]; then
-            echo "Too many errors ($ERRORS), aborting."
+            echo "Too many errors, aborting."
             exit 1
           fi
 
@@ -145,43 +133,103 @@ jobs:
               series.sort(key=lambda e: e.get(key, ''))
               return series
 
+          def last_known(series):
+              return series[-1] if series else None
+
+          # ── Dubizzle ──────────────────────────────────────────────────────
           if new_data.get('dubizzle_entry'):
               history['dubizzle_series'] = upsert(history.get('dubizzle_series', []), new_data['dubizzle_entry'])
-              print(f"  dubizzle_series: {len(history['dubizzle_series'])} entries | latest: {new_data['dubizzle_entry'].get('furniture_home')}")
+              print(f"  dubizzle: OK — furniture_home={new_data['dubizzle_entry'].get('furniture_home')}")
           else:
-              print("  WARNING: no dubizzle_entry in output")
+              prev = last_known(history.get('dubizzle_series', []))
+              print(f"  dubizzle: MISSING — carrying forward {prev['date'] if prev else 'none'}")
 
+          # ── Bayut ─────────────────────────────────────────────────────────
           if new_data.get('bayut_entry'):
               history['bayut_series'] = upsert(history.get('bayut_series', []), new_data['bayut_entry'])
-              print(f"  bayut_series: {len(history['bayut_series'])} entries")
+              print(f"  bayut: OK — d9={new_data['bayut_entry'].get('district9_listings')}")
+          else:
+              prev = last_known(history.get('bayut_series', []))
+              print(f"  bayut: MISSING — carrying forward {prev['date'] if prev else 'none'}")
 
+          # ── Luxury ────────────────────────────────────────────────────────
           if new_data.get('luxury_entry'):
               history['luxury_drops_series'] = upsert(history.get('luxury_drops_series', []), new_data['luxury_entry'])
-              print(f"  luxury_drops_series: {len(history['luxury_drops_series'])} entries")
+              print(f"  luxury: OK — drops={new_data['luxury_entry'].get('drop_count')}")
+          else:
+              prev = last_known(history.get('luxury_drops_series', []))
+              print(f"  luxury: MISSING — carrying forward {prev['date'] if prev else 'none'}")
 
+          # ── Ajman ─────────────────────────────────────────────────────────
           if new_data.get('ajman_entry'):
               history['ajman_property_series'] = upsert(history.get('ajman_property_series', []), new_data['ajman_entry'])
-              print(f"  ajman_property_series: {len(history['ajman_property_series'])} entries")
+              print(f"  ajman: OK — for_sale={new_data['ajman_entry'].get('ajman_for_sale')}")
+          else:
+              prev = last_known(history.get('ajman_property_series', []))
+              print(f"  ajman: MISSING — carrying forward {prev['date'] if prev else 'none'}")
 
-          if new_data.get('stress'):
-              history['stress_series'] = upsert(history.get('stress_series', []), new_data['stress'])
-              print(f"  stress_series: {len(history['stress_series'])} entries")
+          # ── Stress — recalculate using carry-forward for missing sources ──
+          # Use today's values where available, else last known
+          dub = new_data.get('dubizzle_entry') or last_known(history.get('dubizzle_series', []))
+          lux = new_data.get('luxury_entry') or last_known(history.get('luxury_drops_series', []))
+          bay = new_data.get('bayut_entry') or last_known(history.get('bayut_series', []))
+          ajm = new_data.get('ajman_entry') or last_known(history.get('ajman_property_series', []))
+
+          furniture = dub.get('furniture_home', 133228) if dub else 133228
+          drop_count = lux.get('drop_count', 1542) if lux else 1542
+          d9 = bay.get('district9_listings', 31) if bay else 31
+          sale = ajm.get('ajman_for_sale', 0) if ajm else 0
+          rent = ajm.get('ajman_for_rent', 1) if ajm else 1
+
+          furniture_pct = ((furniture - 133228) / 133228) * 100
+          dubizzle_score = min(25, round(furniture_pct / 0.4))
+          luxury_score = min(25, round((drop_count - 1542) / 1542 * 100 / 2))
+          bayut_score = min(25, round((31 - d9) / 31 * 100 / 2))
+          ratio = round(sale / rent, 3) if rent > 0 else 0
+          ratio_score = min(25, max(0, round(ratio * 10 - 12)))
+          total = dubizzle_score + luxury_score + bayut_score + ratio_score
+
+          band = (
+              'Stable - no signal' if total < 30 else
+              'Mild stress building' if total < 45 else
+              'Clear stress building' if total < 60 else
+              'High stress - monitor closely' if total < 75 else
+              'Crisis signal'
+          )
+
+          stress_entry = {
+              'date': today,
+              'total': total,
+              'band': band,
+              'components': {
+                  'dubizzle': dubizzle_score,
+                  'luxury': luxury_score,
+                  'bayut': bayut_score,
+                  'ajman_ratio': ratio_score
+              },
+              'carry_forward': {
+                  'dubizzle': new_data.get('dubizzle_entry') is None,
+                  'luxury': new_data.get('luxury_entry') is None,
+                  'bayut': new_data.get('bayut_entry') is None,
+                  'ajman': new_data.get('ajman_entry') is None
+              }
+          }
+
+          history['stress_series'] = upsert(history.get('stress_series', []), stress_entry)
 
           history['last_updated'] = new_data['scraped_at']
-          history['latest_stress'] = new_data.get('stress', {})
+          history['latest_stress'] = stress_entry
           history['collection_errors'] = new_data.get('errors', [])
 
           with open('/tmp/uae_history_updated.json', 'w') as f:
               json.dump(history, f, indent=2)
 
-          stress = new_data.get('stress', {})
-          print(f"\n=== STRESS: {stress.get('total')}/100 — {stress.get('band')} ===")
-          print(f"Components: {stress.get('components')}")
-          errors = new_data.get('errors', [])
-          if errors:
-              print(f"Errors ({len(errors)}): {[e['source'] for e in errors]}")
-          else:
-              print("No errors — all sources collected successfully.")
+          print(f"\n=== STRESS: {total}/100 — {band} ===")
+          print(f"  A dubizzle={dubizzle_score} (furniture={furniture:,}{'*' if new_data.get('dubizzle_entry') is None else ''})")
+          print(f"  B luxury={luxury_score} (drops={drop_count:,}{'*' if new_data.get('luxury_entry') is None else ''})")
+          print(f"  C bayut={bayut_score} (d9={d9}{'*' if new_data.get('bayut_entry') is None else ''})")
+          print(f"  D ratio={ratio_score} (ratio={ratio}{'*' if new_data.get('ajman_entry') is None else ''})")
+          print(f"  (* = carried forward from previous day)")
           PYEOF
 
       - name: Push updated history to Gist
@@ -208,7 +256,7 @@ jobs:
           if url:
               print(f'Gist updated: {url} | {updated}')
           else:
-              print(f'ERROR pushing to Gist: {list(d.keys())}')
+              print(f'ERROR: {list(d.keys())}')
           "
 
       - name: Summary
@@ -221,18 +269,8 @@ jobs:
           import json
           with open('/tmp/apify_output.json') as f:
               d = json.load(f)
-          s = d.get('stress', {})
-          print(f"Stress: {s.get('total')}/100 — {s.get('band')}")
-          print(f"Components: {s.get('components')}")
-          dub = d.get('dubizzle_entry') or {}
-          print(f"Dubizzle Furniture/Home: {dub.get('furniture_home', 'MISSING')}")
-          lux = d.get('luxury_entry') or {}
-          print(f"Luxury drops: {lux.get('drop_count', 'MISSING')} | max: {lux.get('max_drop_pct', '?')}%")
-          ajm = d.get('ajman_entry') or {}
-          print(f"Ajman ratio: {ajm.get('ratio', 'MISSING')}")
           errs = d.get('errors', [])
+          print(f"Sources collected: {6 - len(errs)}/6")
           print(f"Errors: {[e['source'] for e in errs] if errs else 'none'}")
           PYEOF
-          else
-            echo "No output file found — actor may not have completed."
           fi
