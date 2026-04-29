@@ -112,7 +112,7 @@ jobs:
           def last_known(series):
               return series[-1] if series else None
 
-          # ── Dubizzle classifieds ──────────────────────────────────────────
+          # ── Store all series (new sources stored as data only) ────────────
           if new_data.get('dubizzle_entry'):
               history['dubizzle_series'] = upsert(history.get('dubizzle_series', []), new_data['dubizzle_entry'])
               print(f"  dubizzle: OK furniture={new_data['dubizzle_entry'].get('furniture_home')}")
@@ -120,16 +120,13 @@ jobs:
               prev = last_known(history.get('dubizzle_series', []))
               print(f"  dubizzle: MISSING — carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Dubizzle property ─────────────────────────────────────────────
           if new_data.get('dubizzle_property_entry'):
               history.setdefault('dubizzle_property_series', [])
               history['dubizzle_property_series'] = upsert(history['dubizzle_property_series'], new_data['dubizzle_property_entry'])
-              print(f"  dubizzle_property: OK ajman={new_data['dubizzle_property_entry'].get('ajman')} total={new_data['dubizzle_property_entry'].get('total_uae')}")
+              print(f"  dubizzle_property: OK ajman={new_data['dubizzle_property_entry'].get('ajman')}")
           else:
-              prev = last_known(history.get('dubizzle_property_series', []))
-              print(f"  dubizzle_property: MISSING — carry forward {prev['date'] if prev else 'none'}")
+              print(f"  dubizzle_property: MISSING (data only, not scored yet)")
 
-          # ── Bayut ─────────────────────────────────────────────────────────
           if new_data.get('bayut_entry'):
               history['bayut_series'] = upsert(history.get('bayut_series', []), new_data['bayut_entry'])
               print(f"  bayut: OK d9={new_data['bayut_entry'].get('district9_listings')}")
@@ -137,7 +134,6 @@ jobs:
               prev = last_known(history.get('bayut_series', []))
               print(f"  bayut: MISSING — carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Luxury ────────────────────────────────────────────────────────
           if new_data.get('luxury_entry'):
               history['luxury_drops_series'] = upsert(history.get('luxury_drops_series', []), new_data['luxury_entry'])
               print(f"  luxury: OK drops={new_data['luxury_entry'].get('drop_count')}")
@@ -145,7 +141,6 @@ jobs:
               prev = last_known(history.get('luxury_drops_series', []))
               print(f"  luxury: MISSING — carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Ajman (includes PropertyFinder cross-check) ───────────────────
           if new_data.get('ajman_entry'):
               history['ajman_property_series'] = upsert(history.get('ajman_property_series', []), new_data['ajman_entry'])
               print(f"  ajman: OK sale={new_data['ajman_entry'].get('ajman_for_sale')} pf={new_data['ajman_entry'].get('propertyfinder_ajman')}")
@@ -153,37 +148,29 @@ jobs:
               prev = last_known(history.get('ajman_property_series', []))
               print(f"  ajman: MISSING — carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Stress — recalculate with carry-forward ────────────────────────
-          dub     = new_data.get('dubizzle_entry')        or last_known(history.get('dubizzle_series', []))
-          dubprop = new_data.get('dubizzle_property_entry') or last_known(history.get('dubizzle_property_series', []))
-          lux     = new_data.get('luxury_entry')          or last_known(history.get('luxury_drops_series', []))
-          bay     = new_data.get('bayut_entry')           or last_known(history.get('bayut_series', []))
-          ajm     = new_data.get('ajman_entry')           or last_known(history.get('ajman_property_series', []))
+          # ── Stress: 4-component model x 0-25 = 100 (stable, consistent) ──
+          dub = new_data.get('dubizzle_entry') or last_known(history.get('dubizzle_series', []))
+          lux = new_data.get('luxury_entry')   or last_known(history.get('luxury_drops_series', []))
+          bay = new_data.get('bayut_entry')     or last_known(history.get('bayut_series', []))
+          ajm = new_data.get('ajman_entry')     or last_known(history.get('ajman_property_series', []))
 
-          furniture   = dub.get('furniture_home', 133228) if dub else 133228
-          drop_count  = lux.get('drop_count', 1542) if lux else 1542
-          d9          = bay.get('district9_listings', 31) if bay else 31
-          sale        = ajm.get('ajman_for_sale', 0) if ajm else 0
-          rent        = ajm.get('ajman_for_rent', 1) if ajm else 1
-          dub_prop_ajman = dubprop.get('ajman', 90739) if dubprop else 90739
+          furniture  = dub.get('furniture_home', 133228) if dub else 133228
+          drop_count = lux.get('drop_count', 1542) if lux else 1542
+          d9         = bay.get('district9_listings', 31) if bay else 31
+          sale       = ajm.get('ajman_for_sale', 0) if ajm else 0
+          rent       = ajm.get('ajman_for_rent', 1) if ajm else 1
+          ratio      = round(sale / rent, 3) if rent > 0 else 0
 
-          # Scoring (each 0-20, total 0-120, normalized to 0-100)
-          dubizzle_s  = min(20, round(((furniture - 133228) / 133228) * 100 / 0.5))
-          luxury_s    = min(20, round((drop_count - 1542) / 1542 * 100 / 2.5))
-          bayut_s     = min(20, round((31 - d9) / 31 * 100 / 2.5))
-          ratio       = round(sale / rent, 3) if rent > 0 else 0
-          ratio_s     = min(20, max(0, round(ratio * 8 - 10)))
-          dubprop_s   = min(20, max(0, round(((dub_prop_ajman - 90739) / 90739) * 100 / 0.5)))
-          # PropertyFinder: embedded in ajman_entry, use as corroboration
-          pf_count    = ajm.get('propertyfinder_ajman', 0) if ajm else 0
-          pf_s        = min(20, max(0, round(((pf_count - 15000) / 15000) * 100 / 5))) if pf_count else 0
+          dubizzle_s = min(25, round(((furniture - 133228) / 133228) * 100 / 0.4))
+          luxury_s   = min(25, round((drop_count - 1542) / 1542 * 100 / 2))
+          bayut_s    = min(25, round((31 - d9) / 31 * 100 / 2))
+          ratio_s    = min(25, max(0, round(ratio * 10 - 12)))
+          total      = dubizzle_s + luxury_s + bayut_s + ratio_s
 
-          raw_total = dubizzle_s + luxury_s + bayut_s + ratio_s + dubprop_s + pf_s
-          total = round((raw_total / 120) * 100)
           band = (
-              'Stable - no signal'          if total < 30 else
-              'Mild stress building'         if total < 45 else
-              'Clear stress building'        if total < 60 else
+              'Stable - no signal'           if total < 30 else
+              'Mild stress building'          if total < 45 else
+              'Clear stress building'         if total < 60 else
               'High stress - monitor closely' if total < 75 else
               'Crisis signal'
           )
@@ -192,15 +179,13 @@ jobs:
               'date': today, 'total': total, 'band': band,
               'components': {
                   'dubizzle': dubizzle_s, 'luxury': luxury_s,
-                  'bayut': bayut_s, 'ajman_ratio': ratio_s,
-                  'dubizzle_property': dubprop_s, 'propertyfinder': pf_s
+                  'bayut': bayut_s, 'ajman_ratio': ratio_s
               },
               'carry_forward': {
-                  'dubizzle':          new_data.get('dubizzle_entry') is None,
-                  'dubizzle_property': new_data.get('dubizzle_property_entry') is None,
-                  'luxury':            new_data.get('luxury_entry') is None,
-                  'bayut':             new_data.get('bayut_entry') is None,
-                  'ajman':             new_data.get('ajman_entry') is None,
+                  'dubizzle': new_data.get('dubizzle_entry') is None,
+                  'luxury':   new_data.get('luxury_entry') is None,
+                  'bayut':    new_data.get('bayut_entry') is None,
+                  'ajman':    new_data.get('ajman_entry') is None,
               }
           }
 
@@ -212,16 +197,13 @@ jobs:
           with open('/tmp/uae_history_updated.json', 'w') as f:
               json.dump(history, f, indent=2)
 
-          cf = stress_entry['carry_forward']
-          cf_flags = [k for k, v in cf.items() if v]
+          cf = [k for k, v in stress_entry['carry_forward'].items() if v]
           print(f"\n=== STRESS: {total}/100 — {band} ===")
           print(f"  A dubizzle={dubizzle_s} (furniture={furniture:,})")
           print(f"  B luxury={luxury_s} (drops={drop_count:,})")
           print(f"  C bayut={bayut_s} (d9={d9})")
           print(f"  D ratio={ratio_s} (ratio={ratio})")
-          print(f"  E dub_property={dubprop_s} (ajman={dub_prop_ajman:,})")
-          print(f"  F propertyfinder={pf_s} (count={pf_count:,})")
-          if cf_flags: print(f"  * Carried forward: {cf_flags}")
+          if cf: print(f"  * Carried forward: {cf}")
           PYEOF
 
       - name: Push updated history to Gist
