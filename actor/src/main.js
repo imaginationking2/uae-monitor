@@ -9,8 +9,19 @@ const SCRAPED_AT = new Date().toISOString();
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
   dubizzle: null, bayut_d9: null, bayut_ajman_sale: null,
-  bayut_ajman_rent: null, benchmark: null, luxury: null, errors: []
+  bayut_ajman_rent: null, benchmark: null, luxury: null,
+  dubizzle_jobs: null, errors: []
 };
+
+const TARGETS = [
+  { id: 'dubizzle',         url: 'https://uae.dubizzle.com/classified/' },
+  { id: 'dubizzle_jobs',    url: 'https://uae.dubizzle.com/jobs/search/?q=' },
+  { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
+  { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
+  { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
+  { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' },
+  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
+];
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
@@ -34,6 +45,45 @@ function parseDubizzle(text) {
   return Object.keys(out).length >= 3 ? out : null;
 }
 
+function parseDubizzleJobs(text) {
+  if (!text || text.length < 100) return null;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Total: "Jobs in UAE•1,310 Ads"
+  const totalLine = lines.find(l => /Jobs in UAE[^\d]*(\d[\d,]+)\s*Ads/i.test(l));
+  const totalMatch = totalLine?.match(/(\d[\d,]+)\s*Ads/i);
+  const total = totalMatch ? parseInt(totalMatch[1].replace(/,/g, '')) : null;
+
+  // Category breakdown — format: category name line followed by "(196)" count line
+  const cats = {};
+  const catMap = {
+    'sales': 'sales_biz_dev',
+    'accounting': 'accounting_finance',
+    'real estate': 'real_estate',
+    'engineering': 'engineering',
+    'construction': 'construction',
+    'driver': 'driver_delivery',
+    'manufacturing': 'manufacturing',
+    'hr': 'hr_admin',
+    'hospitality': 'hospitality',
+    'it': 'it_software'
+  };
+  for (let i = 1; i < lines.length; i++) {
+    const m = lines[i].match(/^\((\d+)\)$/);
+    if (m && lines[i-1]) {
+      const cat = lines[i-1].toLowerCase();
+      for (const [keyword, key] of Object.entries(catMap)) {
+        if (cat.includes(keyword) && !cats[key]) {
+          cats[key] = parseInt(m[1]);
+        }
+      }
+    }
+  }
+
+  if (!total) return null;
+  return { total_jobs: total, categories: cats };
+}
+
 function parseBayutCount(text) {
   if (!text) return null;
   const cl = text.split('\n').map(l => l.trim()).find(l => /\d+ to \d+ of [\d,]+ Propert/i.test(l));
@@ -48,6 +98,14 @@ function parseBayutD9(text) {
   const am = text.split('\n').map(l => l.trim()).find(l => /average sale price.*AED/i.test(l));
   const avg = am ? parseInt(am.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g, '')) : null;
   return count != null ? { district9_listings: count, avg_sale_price: avg } : null;
+}
+
+function parseBayutAjmanSale(text) {
+  if (!text) return null;
+  const count = parseBayutCount(text);
+  const avgLine = text.split('\n').map(l => l.trim()).find(l => /average sale price.*AED/i.test(l));
+  const avg = avgLine ? parseInt(avgLine.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g, '')) : null;
+  return count != null ? { count, avg_sale_price: avg } : null;
 }
 
 function parseBenchmark(title) {
@@ -71,34 +129,31 @@ function parseLuxury(title, text) {
 }
 
 function computeStress(r) {
-  const furniturePct = r.dubizzle?.furniture_home
-    ? ((r.dubizzle.furniture_home - 133228) / 133228) * 100 : 0;
+  const furniture = r.dubizzle?.furniture_home || 133228;
+  const furniturePct = ((furniture - 133228) / 133228) * 100;
   const dubizzleScore = Math.min(25, Math.round(furniturePct / 0.4));
-  const luxuryScore = r.luxury?.drop_count != null
-    ? Math.min(25, Math.round((r.luxury.drop_count - 1542) / 1542 * 100 / 2)) : 0;
+  const drops = r.luxury?.drop_count || 1542;
+  const luxuryScore = Math.min(25, Math.round((drops - 1542) / 1542 * 100 / 2));
   const d9 = r.bayut_d9?.district9_listings ?? 31;
   const bayutScore = Math.min(25, Math.round((31 - d9) / 31 * 100 / 2));
-  const ratio = (r.bayut_ajman_sale && r.bayut_ajman_rent)
-    ? parseFloat((r.bayut_ajman_sale / r.bayut_ajman_rent).toFixed(3)) : 0;
+  const sale = r.bayut_ajman_sale?.count || 0;
+  const rent = r.bayut_ajman_rent || 1;
+  const ratio = (sale && rent) ? parseFloat((sale / rent).toFixed(3)) : 0;
   const ratioScore = Math.min(25, Math.max(0, Math.round(ratio * 10 - 12)));
   const total = dubizzleScore + luxuryScore + bayutScore + ratioScore;
-  const band = total < 30 ? 'Stable – no signal'
+  const band = total < 30 ? 'Stable - no signal'
     : total < 45 ? 'Mild stress building'
     : total < 60 ? 'Clear stress building'
-    : total < 75 ? 'High stress – monitor closely' : 'Crisis signal';
+    : total < 75 ? 'High stress - monitor closely'
+    : 'Crisis signal';
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
 // ── Proxy ─────────────────────────────────────────────────────────────────────
 let proxyConfiguration;
 try {
-  proxyConfiguration = await Actor.createProxyConfiguration({
-    groups: ['RESIDENTIAL'],
-    countryCode: 'AE'
-  });
-} catch (e) {
-  console.log('Proxy config failed, continuing without proxy:', e.message);
-}
+  proxyConfiguration = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
+} catch (e) { console.log('Proxy failed:', e.message); }
 
 // ── Crawler ───────────────────────────────────────────────────────────────────
 const crawler = new PlaywrightCrawler({
@@ -107,88 +162,85 @@ const crawler = new PlaywrightCrawler({
   navigationTimeoutSecs: 90,
   requestHandlerTimeoutSecs: 150,
   maxConcurrency: 1,
-  launchContext: {
-    launchOptions: {
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    }
-  },
+  launchContext: { launchOptions: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] } },
 
   async requestHandler({ request, page, log }) {
     const { id } = request.userData;
-    log.info(`Scraping: ${id} — ${request.url}`);
+    log.info(`Scraping: ${id}`);
 
-    // Wait for page load
-    try {
-      await page.waitForLoadState('networkidle', { timeout: 30000 });
-    } catch {
-      await page.waitForLoadState('domcontentloaded');
-      await sleep(3000);
-    }
+    try { await page.waitForLoadState('networkidle', { timeout: 30000 }); }
+    catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
 
     const title = await page.title();
     const currentUrl = page.url();
+    if (/captcha|robot|blocked|challenge/i.test(title) || currentUrl.includes('captchaChallenge'))
+      throw new Error(`CAPTCHA on ${id}`);
 
-    // CAPTCHA check
-    if (/captcha|robot|blocked|challenge/i.test(title) || currentUrl.includes('captchaChallenge')) {
-      throw new Error(`CAPTCHA on ${id}: ${title}`);
-    }
-
-    // Get text — use page.content() as HTML fallback if innerText is empty
     const bodyText = await page.evaluate(() => {
       const inner = document.body?.innerText || '';
       return inner.trim().length > 50 ? inner : document.documentElement?.outerHTML || '';
     });
-
-    log.info(`${id}: got ${bodyText.length} chars, title="${title}"`);
-
-    if (!bodyText || bodyText.length < 100) {
-      throw new Error(`Empty body on ${id} (len=${bodyText?.length}, title="${title}")`);
-    }
+    log.info(`${id}: ${bodyText.length} chars`);
+    if (!bodyText || bodyText.length < 100) throw new Error(`Empty body on ${id}`);
 
     let parsed = null;
 
     switch (id) {
       case 'dubizzle': {
-        // Try innerText parse first
         parsed = parseDubizzle(bodyText);
-
-        // If that fails, try to find numbers in the raw HTML
         if (!parsed) {
-          log.warning(`Dubizzle: innerText parse failed, trying HTML extraction...`);
-          const html = await page.content();
-          log.info(`Dubizzle HTML length: ${html.length}`);
-
-          // Extract numbers from HTML — category counts appear as data attributes or JSON
-          const htmlOut = {};
-          // Pattern: category name near a count number in HTML
-          const furM = html.match(/[Ff]urniture[^<]{0,200}?(\d{5,6})/s);
-          const appM = html.match(/[Hh]ome\s+[Aa]ppli[^<]{0,200}?(\d{5,6})/s);
-          const sporM = html.match(/[Ss]ports\s+[Ee]quip[^<]{0,200}?(\d{4,6})/s);
-          const mobM = html.match(/[Mm]obile[^<]{0,200}?(\d{4,6})/s);
-          const elecM = html.match(/"ELECTRONICS"[^<]{0,100}?(\d{4,6})/s) || html.match(/[Ee]lectronics[^<]{0,100}>(\d{4,6})/s);
-          const compM = html.match(/[Cc]omputers[^<]{0,200}?(\d{4,6})/s);
-
-          if (furM) htmlOut.furniture_home = parseInt(furM[1]);
-          if (appM) htmlOut.home_appliances = parseInt(appM[1]);
-          if (sporM) htmlOut.sports = parseInt(sporM[1]);
-          if (mobM) htmlOut.mobiles_tablets = parseInt(mobM[1]);
-          if (elecM) htmlOut.electronics = parseInt(elecM[1]);
-          if (compM) htmlOut.computers = parseInt(compM[1]);
-
-          if (Object.keys(htmlOut).length >= 3) {
-            parsed = htmlOut;
-            log.info(`Dubizzle: HTML extraction got ${Object.keys(htmlOut).length} categories`);
-          }
+          parsed = await page.evaluate(() => {
+            const out = {};
+            const lines = document.body.innerText.split('\n').map(l => l.trim()).filter(Boolean);
+            for (let i = 0; i < lines.length - 1; i++) {
+              const upper = lines[i].toUpperCase();
+              const next = lines[i + 1];
+              const num = parseInt((next || '').replace(/,/g, ''));
+              if (/^[\d,]+$/.test(next) && num > 5000) {
+                if (upper.includes('FURNITURE')) out.furniture_home = num;
+                if (upper.includes('HOME APPL')) out.home_appliances = num;
+                if (upper.includes('SPORTS')) out.sports = num;
+                if (upper.includes('MOBILE')) out.mobiles_tablets = num;
+                if (upper === 'ELECTRONICS') out.electronics = num;
+                if (upper.includes('COMPUTERS')) out.computers = num;
+              }
+            }
+            return Object.keys(out).length >= 3 ? out : null;
+          });
         }
-
-        // If still null, log what we got for debugging
-        if (!parsed) {
-          const sample = bodyText.substring(0, 500);
-          log.error(`Dubizzle: all strategies failed. Body sample: ${sample}`);
-          throw new Error('dubizzle: all parse strategies failed');
-        }
-
+        if (!parsed) throw new Error('dubizzle: all strategies failed');
         results.dubizzle = parsed;
+        break;
+      }
+
+      case 'dubizzle_jobs': {
+        parsed = parseDubizzleJobs(bodyText);
+        if (!parsed) {
+          // Fallback: extract from page DOM directly
+          parsed = await page.evaluate(() => {
+            const lines = document.body.innerText.split('\n').map(l => l.trim()).filter(Boolean);
+            const totalLine = lines.find(l => /Jobs in UAE[^\d]*[\d,]+\s*Ads/i.test(l));
+            const totalMatch = totalLine?.match(/([\d,]+)\s*Ads/i);
+            const total = totalMatch ? parseInt(totalMatch[1].replace(/,/g, '')) : null;
+            if (!total) return null;
+            const cats = {};
+            for (let i = 1; i < lines.length; i++) {
+              const m = lines[i].match(/^\((\d+)\)$/);
+              if (m && lines[i-1]) {
+                const cat = lines[i-1].toLowerCase();
+                if (cat.includes('sales')) cats.sales_biz_dev = parseInt(m[1]);
+                if (cat.includes('real estate')) cats.real_estate = parseInt(m[1]);
+                if (cat.includes('engineering')) cats.engineering = parseInt(m[1]);
+                if (cat.includes('accounting')) cats.accounting_finance = parseInt(m[1]);
+                if (cat.includes('construction')) cats.construction = parseInt(m[1]);
+                if (cat.includes('driver')) cats.driver_delivery = parseInt(m[1]);
+              }
+            }
+            return { total_jobs: total, categories: cats };
+          });
+        }
+        if (!parsed) { log.warning('dubizzle_jobs: parse failed'); throw new Error('dubizzle_jobs parse failed'); }
+        results.dubizzle_jobs = parsed;
         break;
       }
 
@@ -199,7 +251,7 @@ const crawler = new PlaywrightCrawler({
         break;
 
       case 'bayut_ajman_sale':
-        parsed = parseBayutCount(bodyText);
+        parsed = parseBayutAjmanSale(bodyText);
         if (!parsed) throw new Error('bayut_ajman_sale parse failed');
         results.bayut_ajman_sale = parsed;
         break;
@@ -233,33 +285,28 @@ const crawler = new PlaywrightCrawler({
   }
 });
 
-const TARGETS = [
-  { id: 'dubizzle',         url: 'https://uae.dubizzle.com/classified/' },
-  { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
-  { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
-  { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
-  { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' },
-  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
-];
-
 await crawler.run(TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
+const bayutSaleCount = results.bayut_ajman_sale?.count || null;
+const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
+
 const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
   stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
   dubizzle_entry: results.dubizzle ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle } : null,
+  dubizzle_jobs_entry: results.dubizzle_jobs ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle_jobs } : null,
   bayut_entry: results.bayut_d9 ? {
-    date: TODAY,
-    district9_listings: results.bayut_d9.district9_listings,
+    date: TODAY, district9_listings: results.bayut_d9.district9_listings,
     d9_avg_price: results.bayut_d9.avg_sale_price,
     benchmark_price_aed: results.benchmark?.benchmark_price_aed ?? 3200000,
     benchmark_flag: 'NO CHANGE'
   } : null,
   luxury_entry: results.luxury ? { date: TODAY, ...results.luxury } : null,
-  ajman_entry: (results.bayut_ajman_sale && results.bayut_ajman_rent) ? {
+  ajman_entry: (bayutSaleCount && results.bayut_ajman_rent) ? {
     date: TODAY, scraped_at: SCRAPED_AT,
-    ajman_for_sale: results.bayut_ajman_sale,
+    ajman_for_sale: bayutSaleCount,
+    ajman_for_sale_avg_price: bayutSaleAvg,
     ajman_for_rent: results.bayut_ajman_rent,
     ratio: stress.ratio
   } : null,
