@@ -8,22 +8,48 @@ const SCRAPED_AT = new Date().toISOString();
 
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
-  dubizzle: null, bayut_d9: null, bayut_ajman_sale: null,
-  bayut_ajman_rent: null, benchmark: null, luxury: null,
-  dubizzle_jobs: null, errors: []
+  dubizzle: null,
+  dubizzle_motors: null,
+  dubizzle_property_sale: null,
+  dubizzle_property_rent: null,
+  dubizzle_jobs: null,
+  bayut_d9: null,
+  bayut_ajman_sale: null,
+  bayut_ajman_rent: null,
+  benchmark: null,
+  luxury: null,
+  errors: []
 };
 
 const TARGETS = [
-  { id: 'dubizzle',         url: 'https://uae.dubizzle.com/classified/' },
-  { id: 'dubizzle_jobs',    url: 'https://uae.dubizzle.com/jobs/search/?q=' },
-  { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
-  { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
-  { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
-  { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' },
-  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
+  { id: 'dubizzle',               url: 'https://uae.dubizzle.com/classified/' },
+  { id: 'dubizzle_motors',        url: 'https://uae.dubizzle.com/motors/' },
+  { id: 'dubizzle_property_sale', url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'dubizzle_property_rent', url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'dubizzle_jobs',          url: 'https://uae.dubizzle.com/jobs/search/?q=' },
+  { id: 'bayut_d9',               url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
+  { id: 'bayut_ajman_sale',       url: 'https://www.bayut.com/for-sale/property/ajman/' },
+  { id: 'bayut_ajman_rent',       url: 'https://www.bayut.com/to-rent/property/ajman/' },
+  { id: 'benchmark',              url: 'https://www.bayut.com/property/details-13073585.html' },
+  { id: 'luxury',                 url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
+
+function parseCategoryPage(text) {
+  // Generic parser for pages with CATEGORY NAME\nCOUNT pattern
+  if (!text || text.length < 100) return null;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const out = {};
+  for (let i = 0; i < lines.length - 1; i++) {
+    const next = lines[i + 1];
+    if (/^[\d,]+$/.test(next)) {
+      const num = parseInt(next.replace(/,/g, ''));
+      if (num > 100) out[lines[i]] = num;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 function parseDubizzle(text) {
   if (!text || text.length < 100) return null;
@@ -45,42 +71,86 @@ function parseDubizzle(text) {
   return Object.keys(out).length >= 3 ? out : null;
 }
 
+function parseDubizzleMotors(text) {
+  if (!text || text.length < 100) return null;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const out = {};
+  for (let i = 0; i < lines.length - 1; i++) {
+    const upper = lines[i].toUpperCase();
+    const next = lines[i + 1];
+    const num = parseInt((next || '').replace(/,/g, ''));
+    if (/^[\d,]+$/.test(next) && num > 50) {
+      if (upper === 'USED CARS') out.used_cars = num;
+      if (upper === 'NUMBER PLATES') out.number_plates = num;
+      if (upper === 'RENTAL CARS') out.rental_cars = num;
+      if (upper === 'MOTORCYCLES') out.motorcycles = num;
+      if (upper.includes('AUTO ACCESSORIES')) out.auto_accessories = num;
+      if (upper === 'HEAVY VEHICLES') out.heavy_vehicles = num;
+      if (upper === 'BOATS') out.boats = num;
+    }
+  }
+  return Object.keys(out).length >= 3 ? out : null;
+}
+
+function parseDubizzlePropertySale(text, title) {
+  if (!text || text.length < 100) return null;
+  // Total from title: "Properties for Sale in UAE - 245,565 Properties for Sale"
+  const titleM = title.match(/([\d,]+)\s+Properties for Sale/i);
+  const total = titleM ? parseInt(titleM[1].replace(/,/g, '')) : null;
+  return total ? { total_uae: total } : null;
+}
+
+function parseDubizzlePropertyRent(text) {
+  if (!text || text.length < 100) return null;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const emirates = {
+    'Dubai': 'dubai',
+    'Ajman': 'ajman',
+    'Sharjah': 'sharjah',
+    'Abu Dhabi': 'abu_dhabi',
+    'Ras Al Khaimah': 'rak',
+    'Umm Al Quwain': 'uaq',
+    'Fujairah': 'fujairah'
+  };
+  const out = {};
+  lines.forEach((l, i) => {
+    Object.entries(emirates).forEach(([name, key]) => {
+      if (new RegExp(name, 'i').test(l) && l.length < 30 && !out[key]) {
+        const ctx = lines.slice(i, i + 5).join(' ');
+        const m = ctx.match(/([\d,]{4,})/);
+        if (m) out[key] = parseInt(m[1].replace(/,/g, ''));
+      }
+    });
+  });
+  return Object.keys(out).length >= 3 ? out : null;
+}
+
 function parseDubizzleJobs(text) {
   if (!text || text.length < 100) return null;
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-  // Total: "Jobs in UAE•1,310 Ads"
-  const totalLine = lines.find(l => /Jobs in UAE[^\d]*(\d[\d,]+)\s*Ads/i.test(l));
-  const totalMatch = totalLine?.match(/(\d[\d,]+)\s*Ads/i);
+  const totalLine = lines.find(l => /Jobs in UAE.*\d[\d,]+.*Ads/i.test(l));
+  const totalMatch = totalLine?.match(/([\d,]+)\s*Ads/i);
   const total = totalMatch ? parseInt(totalMatch[1].replace(/,/g, '')) : null;
-
-  // Category breakdown — format: category name line followed by "(196)" count line
+  if (!total) return null;
   const cats = {};
   const catMap = {
-    'sales': 'sales_biz_dev',
-    'accounting': 'accounting_finance',
-    'real estate': 'real_estate',
-    'engineering': 'engineering',
-    'construction': 'construction',
-    'driver': 'driver_delivery',
-    'manufacturing': 'manufacturing',
-    'hr': 'hr_admin',
-    'hospitality': 'hospitality',
-    'it': 'it_software'
+    'Sales / Business Development': 'sales_business_dev',
+    'Accounting / Finance': 'accounting_finance',
+    'Driver / Delivery': 'driver_delivery',
+    'Real Estate': 'real_estate',
+    'Engineering': 'engineering',
+    'Construction': 'construction',
+    'Manufacturing / Warehouse': 'manufacturing_warehouse',
+    'HR / Admin': 'hr_admin',
+    'IT / Software Development': 'it_software',
+    'Handyman / Technician': 'handyman_technician',
+    'Secretarial / Front Office': 'secretarial'
   };
-  for (let i = 1; i < lines.length; i++) {
-    const m = lines[i].match(/^\((\d+)\)$/);
-    if (m && lines[i-1]) {
-      const cat = lines[i-1].toLowerCase();
-      for (const [keyword, key] of Object.entries(catMap)) {
-        if (cat.includes(keyword) && !cats[key]) {
-          cats[key] = parseInt(m[1]);
-        }
-      }
-    }
+  for (let i = 0; i < lines.length - 1; i++) {
+    const key = catMap[lines[i]];
+    const m = lines[i + 1]?.match(/^\((\d+)\)$/);
+    if (key && m) cats[key] = parseInt(m[1]);
   }
-
-  if (!total) return null;
   return { total_jobs: total, categories: cats };
 }
 
@@ -130,8 +200,7 @@ function parseLuxury(title, text) {
 
 function computeStress(r) {
   const furniture = r.dubizzle?.furniture_home || 133228;
-  const furniturePct = ((furniture - 133228) / 133228) * 100;
-  const dubizzleScore = Math.min(25, Math.round(furniturePct / 0.4));
+  const dubizzleScore = Math.min(25, Math.round(((furniture - 133228) / 133228) * 100 / 0.4));
   const drops = r.luxury?.drop_count || 1542;
   const luxuryScore = Math.min(25, Math.round((drops - 1542) / 1542 * 100 / 2));
   const d9 = r.bayut_d9?.district9_listings ?? 31;
@@ -141,10 +210,10 @@ function computeStress(r) {
   const ratio = (sale && rent) ? parseFloat((sale / rent).toFixed(3)) : 0;
   const ratioScore = Math.min(25, Math.max(0, Math.round(ratio * 10 - 12)));
   const total = dubizzleScore + luxuryScore + bayutScore + ratioScore;
-  const band = total < 30 ? 'Stable - no signal'
+  const band = total < 30 ? 'Stable – no signal'
     : total < 45 ? 'Mild stress building'
     : total < 60 ? 'Clear stress building'
-    : total < 75 ? 'High stress - monitor closely'
+    : total < 75 ? 'High stress – monitor closely'
     : 'Crisis signal';
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
@@ -152,8 +221,10 @@ function computeStress(r) {
 // ── Proxy ─────────────────────────────────────────────────────────────────────
 let proxyConfiguration;
 try {
-  proxyConfiguration = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
-} catch (e) { console.log('Proxy failed:', e.message); }
+  proxyConfiguration = await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'], countryCode: 'AE'
+  });
+} catch (e) { console.log('Proxy config failed:', e.message); }
 
 // ── Crawler ───────────────────────────────────────────────────────────────────
 const crawler = new PlaywrightCrawler({
@@ -162,119 +233,115 @@ const crawler = new PlaywrightCrawler({
   navigationTimeoutSecs: 90,
   requestHandlerTimeoutSecs: 150,
   maxConcurrency: 1,
-  launchContext: { launchOptions: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] } },
+  launchContext: {
+    launchOptions: {
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu']
+    }
+  },
 
   async requestHandler({ request, page, log }) {
     const { id } = request.userData;
     log.info(`Scraping: ${id}`);
-
-    try { await page.waitForLoadState('networkidle', { timeout: 30000 }); }
-    catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
-
+    try {
+      await page.waitForLoadState('networkidle', { timeout: 30000 });
+    } catch {
+      await page.waitForLoadState('domcontentloaded');
+      await sleep(3000);
+    }
     const title = await page.title();
     const currentUrl = page.url();
-    if (/captcha|robot|blocked|challenge/i.test(title) || currentUrl.includes('captchaChallenge'))
+    if (/captcha|robot|blocked|challenge/i.test(title) || currentUrl.includes('captchaChallenge')) {
       throw new Error(`CAPTCHA on ${id}`);
-
+    }
     const bodyText = await page.evaluate(() => {
       const inner = document.body?.innerText || '';
       return inner.trim().length > 50 ? inner : document.documentElement?.outerHTML || '';
     });
-    log.info(`${id}: ${bodyText.length} chars`);
+    log.info(`${id}: ${bodyText.length} chars, title="${title}"`);
     if (!bodyText || bodyText.length < 100) throw new Error(`Empty body on ${id}`);
 
     let parsed = null;
-
     switch (id) {
       case 'dubizzle': {
         parsed = parseDubizzle(bodyText);
         if (!parsed) {
           parsed = await page.evaluate(() => {
             const out = {};
-            const lines = document.body.innerText.split('\n').map(l => l.trim()).filter(Boolean);
-            for (let i = 0; i < lines.length - 1; i++) {
+            const lines = document.body.innerText.split('\n').map(l=>l.trim()).filter(Boolean);
+            for (let i=0;i<lines.length-1;i++) {
               const upper = lines[i].toUpperCase();
-              const next = lines[i + 1];
-              const num = parseInt((next || '').replace(/,/g, ''));
-              if (/^[\d,]+$/.test(next) && num > 5000) {
-                if (upper.includes('FURNITURE')) out.furniture_home = num;
-                if (upper.includes('HOME APPL')) out.home_appliances = num;
-                if (upper.includes('SPORTS')) out.sports = num;
-                if (upper.includes('MOBILE')) out.mobiles_tablets = num;
-                if (upper === 'ELECTRONICS') out.electronics = num;
-                if (upper.includes('COMPUTERS')) out.computers = num;
+              const num = parseInt((lines[i+1]||'').replace(/,/g,''));
+              if (/^[\d,]+$/.test(lines[i+1]) && num > 5000) {
+                if (upper.includes('FURNITURE')) out.furniture_home=num;
+                if (upper.includes('HOME APPL')) out.home_appliances=num;
+                if (upper.includes('SPORTS')) out.sports=num;
+                if (upper.includes('MOBILE')) out.mobiles_tablets=num;
+                if (upper==='ELECTRONICS') out.electronics=num;
+                if (upper.includes('COMPUTERS')) out.computers=num;
               }
             }
-            return Object.keys(out).length >= 3 ? out : null;
+            return Object.keys(out).length>=3?out:null;
           });
         }
-        if (!parsed) throw new Error('dubizzle: all strategies failed');
+        if (!parsed) throw new Error('dubizzle parse failed');
         results.dubizzle = parsed;
         break;
       }
-
+      case 'dubizzle_motors': {
+        parsed = parseDubizzleMotors(bodyText);
+        if (!parsed) throw new Error('dubizzle_motors parse failed');
+        results.dubizzle_motors = parsed;
+        break;
+      }
+      case 'dubizzle_property_sale': {
+        parsed = parseDubizzlePropertySale(bodyText, title);
+        if (!parsed) throw new Error('dubizzle_property_sale parse failed');
+        results.dubizzle_property_sale = parsed;
+        break;
+      }
+      case 'dubizzle_property_rent': {
+        parsed = parseDubizzlePropertyRent(bodyText);
+        if (!parsed) throw new Error('dubizzle_property_rent parse failed');
+        results.dubizzle_property_rent = parsed;
+        break;
+      }
       case 'dubizzle_jobs': {
         parsed = parseDubizzleJobs(bodyText);
-        if (!parsed) {
-          // Fallback: extract from page DOM directly
-          parsed = await page.evaluate(() => {
-            const lines = document.body.innerText.split('\n').map(l => l.trim()).filter(Boolean);
-            const totalLine = lines.find(l => /Jobs in UAE[^\d]*[\d,]+\s*Ads/i.test(l));
-            const totalMatch = totalLine?.match(/([\d,]+)\s*Ads/i);
-            const total = totalMatch ? parseInt(totalMatch[1].replace(/,/g, '')) : null;
-            if (!total) return null;
-            const cats = {};
-            for (let i = 1; i < lines.length; i++) {
-              const m = lines[i].match(/^\((\d+)\)$/);
-              if (m && lines[i-1]) {
-                const cat = lines[i-1].toLowerCase();
-                if (cat.includes('sales')) cats.sales_biz_dev = parseInt(m[1]);
-                if (cat.includes('real estate')) cats.real_estate = parseInt(m[1]);
-                if (cat.includes('engineering')) cats.engineering = parseInt(m[1]);
-                if (cat.includes('accounting')) cats.accounting_finance = parseInt(m[1]);
-                if (cat.includes('construction')) cats.construction = parseInt(m[1]);
-                if (cat.includes('driver')) cats.driver_delivery = parseInt(m[1]);
-              }
-            }
-            return { total_jobs: total, categories: cats };
-          });
-        }
-        if (!parsed) { log.warning('dubizzle_jobs: parse failed'); throw new Error('dubizzle_jobs parse failed'); }
+        if (!parsed) throw new Error('dubizzle_jobs parse failed');
         results.dubizzle_jobs = parsed;
         break;
       }
-
-      case 'bayut_d9':
+      case 'bayut_d9': {
         parsed = parseBayutD9(bodyText);
         if (!parsed) throw new Error('bayut_d9 parse failed');
         results.bayut_d9 = parsed;
         break;
-
-      case 'bayut_ajman_sale':
+      }
+      case 'bayut_ajman_sale': {
         parsed = parseBayutAjmanSale(bodyText);
         if (!parsed) throw new Error('bayut_ajman_sale parse failed');
         results.bayut_ajman_sale = parsed;
         break;
-
-      case 'bayut_ajman_rent':
+      }
+      case 'bayut_ajman_rent': {
         parsed = parseBayutCount(bodyText);
         if (!parsed) throw new Error('bayut_ajman_rent parse failed');
         results.bayut_ajman_rent = parsed;
         break;
-
-      case 'benchmark':
+      }
+      case 'benchmark': {
         parsed = parseBenchmark(title);
         if (!parsed) throw new Error('benchmark parse failed');
         results.benchmark = parsed;
         break;
-
-      case 'luxury':
+      }
+      case 'luxury': {
         parsed = parseLuxury(title, bodyText);
         if (!parsed) throw new Error('luxury parse failed');
         results.luxury = parsed;
         break;
+      }
     }
-
     log.info(`OK ${id}: ${JSON.stringify(parsed).substring(0, 150)}`);
     await page.close();
   },
@@ -294,10 +361,19 @@ const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
 const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
   stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
-  dubizzle_entry: results.dubizzle ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle } : null,
-  dubizzle_jobs_entry: results.dubizzle_jobs ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle_jobs } : null,
+  dubizzle_entry: results.dubizzle
+    ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle } : null,
+  dubizzle_motors_entry: results.dubizzle_motors
+    ? { date: TODAY, ...results.dubizzle_motors } : null,
+  dubizzle_property_sale_entry: results.dubizzle_property_sale
+    ? { date: TODAY, ...results.dubizzle_property_sale } : null,
+  dubizzle_property_rent_entry: results.dubizzle_property_rent
+    ? { date: TODAY, ...results.dubizzle_property_rent } : null,
+  dubizzle_jobs_entry: results.dubizzle_jobs
+    ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.dubizzle_jobs } : null,
   bayut_entry: results.bayut_d9 ? {
-    date: TODAY, district9_listings: results.bayut_d9.district9_listings,
+    date: TODAY,
+    district9_listings: results.bayut_d9.district9_listings,
     d9_avg_price: results.bayut_d9.avg_sale_price,
     benchmark_price_aed: results.benchmark?.benchmark_price_aed ?? 3200000,
     benchmark_flag: 'NO CHANGE'
