@@ -2,7 +2,7 @@ name: UAE Market Daily Collector
 
 on:
   schedule:
-    - cron: '0 20 * * *'   # 12:00 AM UAE time (UTC+4)
+    - cron: '0 20 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,28 +20,23 @@ jobs:
         id: apify_run
         run: |
           echo "Triggering Apify actor..."
-          RUN_RESPONSE=$(curl -s -X POST \
-            "https://api.apify.com/v2/acts/${{ secrets.APIFY_ACTOR_ID }}/runs" \
-            -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{"memory": 2048, "timeout": 1800}'
-          echo "API response: $RUN_RESPONSE"
+          RUN_RESPONSE=$(curl -s -X POST             "https://api.apify.com/v2/acts/${{ secrets.APIFY_ACTOR_ID }}/runs"             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}"             -H "Content-Type: application/json"             -d '{"memory": 2048, "timeout": 1800}')
+          echo "Run ID response received"
           RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "
           import sys, json
           try:
               d = json.load(sys.stdin)
               print(d['data']['id'])
           except Exception as e:
-              print(f'ERROR: {e}', file=sys.stderr); sys.exit(1)
+              print(f'ERROR: {e}', file=sys.stderr)
+              sys.exit(1)
           ")
           echo "Run ID: $RUN_ID"
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
           STATUS="RUNNING"
           for i in $(seq 1 180); do
             sleep 15
-            POLL=$(curl -s \
-              "https://api.apify.com/v2/actor-runs/$RUN_ID" \
-              -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
+            POLL=$(curl -s               "https://api.apify.com/v2/actor-runs/$RUN_ID"               -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
             STATUS=$(echo "$POLL" | python3 -c "
           import sys, json
           try: d=json.load(sys.stdin); print(d['data']['status'])
@@ -59,9 +54,7 @@ jobs:
         run: |
           RUN_ID="${{ steps.apify_run.outputs.run_id }}"
           sleep 5
-          OUTPUT=$(curl -s \
-            "https://api.apify.com/v2/actor-runs/$RUN_ID/key-value-store/records/OUTPUT" \
-            -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
+          OUTPUT=$(curl -s             "https://api.apify.com/v2/actor-runs/$RUN_ID/key-value-store/records/OUTPUT"             -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
           echo "$OUTPUT" | python3 -c "
           import sys, json
           raw = sys.stdin.read().strip()
@@ -76,9 +69,7 @@ jobs:
 
       - name: Fetch current Gist history
         run: |
-          curl -s \
-            "https://gist.githubusercontent.com/imaginationking2/6864f9c206558d36b9777b00f3758087/raw/uae_history.json" \
-            -o /tmp/uae_history.json
+          curl -s             "https://gist.githubusercontent.com/imaginationking2/6864f9c206558d36b9777b00f3758087/raw/uae_history.json"             -o /tmp/uae_history.json
           echo "Gist: $(wc -c < /tmp/uae_history.json) bytes"
 
       - name: Merge and build updated history JSON
@@ -104,95 +95,86 @@ jobs:
           def last_known(series):
               return series[-1] if series else None
 
-          # ── Dubizzle classifieds ──────────────────────────────────────────
           if new_data.get('dubizzle_entry'):
               history['dubizzle_series'] = upsert(history.get('dubizzle_series', []), new_data['dubizzle_entry'])
               print(f"  dubizzle: OK furniture={new_data['dubizzle_entry'].get('furniture_home')}")
           else:
               prev = last_known(history.get('dubizzle_series', []))
-              print(f"  dubizzle: MISSING — carry forward {prev['date'] if prev else 'none'}")
+              print(f"  dubizzle: MISSING - carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Dubizzle motors ───────────────────────────────────────────────
           if new_data.get('dubizzle_motors_entry'):
               history.setdefault('dubizzle_motors_series', [])
               history['dubizzle_motors_series'] = upsert(history['dubizzle_motors_series'], new_data['dubizzle_motors_entry'])
-              print(f"  motors: OK used_cars={new_data['dubizzle_motors_entry'].get('used_cars')} plates={new_data['dubizzle_motors_entry'].get('number_plates')}")
+              print(f"  motors: OK used_cars={new_data['dubizzle_motors_entry'].get('used_cars')}")
           else:
               print(f"  motors: MISSING")
 
-          # ── Dubizzle property for-sale ────────────────────────────────────
           if new_data.get('dubizzle_property_sale_entry'):
               history.setdefault('dubizzle_property_sale_series', [])
               history['dubizzle_property_sale_series'] = upsert(history['dubizzle_property_sale_series'], new_data['dubizzle_property_sale_entry'])
-              print(f"  property_sale: OK total_uae={new_data['dubizzle_property_sale_entry'].get('total_uae')}")
+              print(f"  property_sale: OK total={new_data['dubizzle_property_sale_entry'].get('total_uae')}")
           else:
               print(f"  property_sale: MISSING")
 
-          # ── Dubizzle property for-rent by emirate ─────────────────────────
           if new_data.get('dubizzle_property_rent_entry'):
               history.setdefault('dubizzle_property_rent_series', [])
               history['dubizzle_property_rent_series'] = upsert(history['dubizzle_property_rent_series'], new_data['dubizzle_property_rent_entry'])
               e = new_data['dubizzle_property_rent_entry']
-              print(f"  property_rent: OK dubai={e.get('dubai')} ajman={e.get('ajman')} sharjah={e.get('sharjah')}")
+              print(f"  property_rent: OK dubai={e.get('dubai')} ajman={e.get('ajman')}")
           else:
               print(f"  property_rent: MISSING")
 
-          # ── Dubizzle jobs ─────────────────────────────────────────────────
           if new_data.get('dubizzle_jobs_entry'):
               history.setdefault('dubizzle_jobs_series', [])
               history['dubizzle_jobs_series'] = upsert(history['dubizzle_jobs_series'], new_data['dubizzle_jobs_entry'])
               print(f"  jobs: OK total={new_data['dubizzle_jobs_entry'].get('total_jobs')}")
           else:
               prev = last_known(history.get('dubizzle_jobs_series', []))
-              print(f"  jobs: MISSING — carry forward {prev['date'] if prev else 'none'}")
+              print(f"  jobs: MISSING - carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Bayut ─────────────────────────────────────────────────────────
           if new_data.get('bayut_entry'):
               history['bayut_series'] = upsert(history.get('bayut_series', []), new_data['bayut_entry'])
               print(f"  bayut: OK d9={new_data['bayut_entry'].get('district9_listings')}")
           else:
               prev = last_known(history.get('bayut_series', []))
-              print(f"  bayut: MISSING — carry forward {prev['date'] if prev else 'none'}")
+              print(f"  bayut: MISSING - carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Luxury ────────────────────────────────────────────────────────
           if new_data.get('luxury_entry'):
               history['luxury_drops_series'] = upsert(history.get('luxury_drops_series', []), new_data['luxury_entry'])
               print(f"  luxury: OK drops={new_data['luxury_entry'].get('drop_count')}")
           else:
               prev = last_known(history.get('luxury_drops_series', []))
-              print(f"  luxury: MISSING — carry forward {prev['date'] if prev else 'none'}")
+              print(f"  luxury: MISSING - carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Ajman ─────────────────────────────────────────────────────────
           if new_data.get('ajman_entry'):
               history['ajman_property_series'] = upsert(history.get('ajman_property_series', []), new_data['ajman_entry'])
               print(f"  ajman: OK sale={new_data['ajman_entry'].get('ajman_for_sale')}")
           else:
               prev = last_known(history.get('ajman_property_series', []))
-              print(f"  ajman: MISSING — carry forward {prev['date'] if prev else 'none'}")
+              print(f"  ajman: MISSING - carry forward {prev['date'] if prev else 'none'}")
 
-          # ── Stress: 4-component model x 0-25 = 100 (stable) ──────────────
           dub = new_data.get('dubizzle_entry') or last_known(history.get('dubizzle_series', []))
-          lux = new_data.get('luxury_entry')   or last_known(history.get('luxury_drops_series', []))
-          bay = new_data.get('bayut_entry')     or last_known(history.get('bayut_series', []))
-          ajm = new_data.get('ajman_entry')     or last_known(history.get('ajman_property_series', []))
+          lux = new_data.get('luxury_entry') or last_known(history.get('luxury_drops_series', []))
+          bay = new_data.get('bayut_entry') or last_known(history.get('bayut_series', []))
+          ajm = new_data.get('ajman_entry') or last_known(history.get('ajman_property_series', []))
 
-          furniture  = dub.get('furniture_home', 133228) if dub else 133228
+          furniture = dub.get('furniture_home', 133228) if dub else 133228
           drop_count = lux.get('drop_count', 1542) if lux else 1542
-          d9         = bay.get('district9_listings', 31) if bay else 31
-          sale       = ajm.get('ajman_for_sale', 0) if ajm else 0
-          rent       = ajm.get('ajman_for_rent', 1) if ajm else 1
-          ratio      = round(sale / rent, 3) if rent > 0 else 0
+          d9 = bay.get('district9_listings', 31) if bay else 31
+          sale = ajm.get('ajman_for_sale', 0) if ajm else 0
+          rent = ajm.get('ajman_for_rent', 1) if ajm else 1
+          ratio = round(sale / rent, 3) if rent > 0 else 0
 
           dubizzle_s = min(25, round(((furniture - 133228) / 133228) * 100 / 0.4))
-          luxury_s   = min(25, round((drop_count - 1542) / 1542 * 100 / 2))
-          bayut_s    = min(25, round((31 - d9) / 31 * 100 / 2))
-          ratio_s    = min(25, max(0, round(ratio * 10 - 12)))
-          total      = dubizzle_s + luxury_s + bayut_s + ratio_s
+          luxury_s = min(25, round((drop_count - 1542) / 1542 * 100 / 2))
+          bayut_s = min(25, round((31 - d9) / 31 * 100 / 2))
+          ratio_s = min(25, max(0, round(ratio * 10 - 12)))
+          total = dubizzle_s + luxury_s + bayut_s + ratio_s
 
           band = (
-              'Stable - no signal'           if total < 30 else
-              'Mild stress building'          if total < 45 else
-              'Clear stress building'         if total < 60 else
+              'Stable - no signal' if total < 30 else
+              'Mild stress building' if total < 45 else
+              'Clear stress building' if total < 60 else
               'High stress - monitor closely' if total < 75 else
               'Crisis signal'
           )
@@ -202,9 +184,9 @@ jobs:
               'components': {'dubizzle': dubizzle_s, 'luxury': luxury_s, 'bayut': bayut_s, 'ajman_ratio': ratio_s},
               'carry_forward': {
                   'dubizzle': new_data.get('dubizzle_entry') is None,
-                  'luxury':   new_data.get('luxury_entry') is None,
-                  'bayut':    new_data.get('bayut_entry') is None,
-                  'ajman':    new_data.get('ajman_entry') is None,
+                  'luxury': new_data.get('luxury_entry') is None,
+                  'bayut': new_data.get('bayut_entry') is None,
+                  'ajman': new_data.get('ajman_entry') is None,
               }
           }
 
@@ -217,7 +199,7 @@ jobs:
               json.dump(history, f, indent=2)
 
           cf = [k for k, v in stress_entry['carry_forward'].items() if v]
-          print(f"\n=== STRESS: {total}/100 — {band} ===")
+          print(f"\n=== STRESS: {total}/100 - {band} ===")
           print(f"  A dubizzle={dubizzle_s} (furniture={furniture:,})")
           print(f"  B luxury={luxury_s} (drops={drop_count:,})")
           print(f"  C bayut={bayut_s} (d9={d9})")
@@ -234,11 +216,7 @@ jobs:
               data = f.read()
           print(json.dumps(data))
           ")
-          RESPONSE=$(curl -s -X PATCH \
-            "https://api.github.com/gists/6864f9c206558d36b9777b00f3758087" \
-            -H "Authorization: Bearer ${{ secrets.GIST_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"files\": {\"uae_history.json\": {\"content\": $CONTENT}}}")
+          RESPONSE=$(curl -s -X PATCH             "https://api.github.com/gists/6864f9c206558d36b9777b00f3758087"             -H "Authorization: Bearer ${{ secrets.GIST_TOKEN }}"             -H "Content-Type: application/json"             -d "{\"files\": {\"uae_history.json\": {\"content\": $CONTENT}}}")
           echo "$RESPONSE" | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
@@ -254,18 +232,9 @@ jobs:
           import json
           with open('/tmp/apify_output.json') as f: d = json.load(f)
           errs = d.get('errors', [])
-          total_targets = 10
-          print(f"Sources: {total_targets - len(errs)}/{total_targets} collected")
+          print(f"Sources: {10 - len(errs)}/10 collected")
           print(f"Errors: {[e['source'] for e in errs] if errs else 'none'}")
           s = d.get('stress', {})
-          print(f"Stress: {s.get('total')}/100 — {s.get('band')}")
-          motors = d.get('dubizzle_motors_entry') or {}
-          print(f"Motors — Used cars: {motors.get('used_cars','?')} | Plates: {motors.get('number_plates','?')}")
-          prop_sale = d.get('dubizzle_property_sale_entry') or {}
-          print(f"Property for-sale UAE total: {prop_sale.get('total_uae','?')}")
-          prop_rent = d.get('dubizzle_property_rent_entry') or {}
-          print(f"Property for-rent — Dubai: {prop_rent.get('dubai','?')} Ajman: {prop_rent.get('ajman','?')}")
-          jobs = d.get('dubizzle_jobs_entry') or {}
-          print(f"Jobs total: {jobs.get('total_jobs','?')} | Real estate: {(jobs.get('categories') or {}).get('real_estate','?')}")
+          print(f"Stress: {s.get('total')}/100 - {s.get('band')}")
           PYEOF
           fi
