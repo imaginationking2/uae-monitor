@@ -8,20 +8,15 @@ const SCRAPED_AT = new Date().toISOString();
 
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
-  jobs_fulltime: null,
-  motors_usedcars: null,
-  classified: null,           // {furniture_home, home_appliances, sports, mobiles_tablets, electronics, computers}
-  property_sale: {},
-  property_rent: {},
+  jobs_fulltime: null, motors_usedcars: null,
+  classified: null,
+  property_sale: {}, property_rent: {},
   luxury: null,
-  bayut_d9: null,
-  bayut_ajman_sale: null,
-  bayut_ajman_rent: null,
+  bayut_d9: null, bayut_ajman_sale: null, bayut_ajman_rent: null,
   benchmark: null,
   errors: []
 };
 
-// ── Per-city URL builders ─────────────────────────────────────────────────────
 const PROP_SALE_TARGETS = [
   { id: 'prop_sale_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
   { id: 'prop_sale_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-sale/residential/' },
@@ -45,7 +40,6 @@ const PROP_RENT_TARGETS = [
   { id: 'prop_rent_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-rent/residential/' }
 ];
 
-// Classified categories — direct URLs (each shows count in <h1>)
 const CLASSIFIED_TARGETS = [
   { id: 'cls_furniture',    key: 'furniture_home',  url: 'https://uae.dubizzle.com/en/classified/furniture-home-garden/' },
   { id: 'cls_appliances',   key: 'home_appliances', url: 'https://uae.dubizzle.com/en/classified/home-appliances/' },
@@ -55,6 +49,7 @@ const CLASSIFIED_TARGETS = [
   { id: 'cls_computers',    key: 'computers',       url: 'https://uae.dubizzle.com/en/classified/computers-networking/' }
 ];
 
+// IMPORTANT: Run jobs+motors FIRST to warm up the proxy with simple homepage-like requests
 const SINGLE_TARGETS = [
   { id: 'jobs',             url: 'https://uae.dubizzle.com/jobs/' },
   { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
@@ -67,8 +62,6 @@ const SINGLE_TARGETS = [
 const LUXURY_TARGETS = [
   { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
-
-// ── DOM-based parsers ────────────────────────────────────────────────────────
 
 async function parseJobs(page, log) {
   try { await page.waitForSelector('a[href*="full-time"] p', { timeout: 12000 }); }
@@ -95,29 +88,19 @@ async function parseMotors(page, log) {
       const m = el.nextElementSibling.textContent.match(/([\d,]+)/);
       if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
     }
-    const allP = Array.from(document.querySelectorAll('p'));
-    for (let i = 0; i < allP.length - 1; i++) {
-      if (allP[i].textContent.trim() === 'Used Cars') {
-        const m = allP[i + 1].textContent.match(/([\d,]+)/);
-        if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
-      }
-    }
     return null;
   });
 }
 
-// Universal property/classified count parser (h1 with "Ads" pattern, or .mui-style-1cryx81 span)
 async function parseListingCount(page) {
   try { await page.waitForSelector('.mui-style-1cryx81, [data-testid="page-title"] h1, h1', { timeout: 15000 }); }
   catch {}
   return page.evaluate(() => {
-    // Primary: <span class="mui-style-1cryx81">246,503 Ads</span>
     const span = document.querySelector('.mui-style-1cryx81');
     if (span) {
       const m = span.textContent.match(/([\d,]+)/);
       if (m) return parseInt(m[1].replace(/,/g, ''));
     }
-    // Fallback: h1 with "Ads" pattern
     const h1 = document.querySelector('[data-testid="page-title"] h1') || document.querySelector('h1');
     if (h1) {
       const m = h1.textContent.match(/([\d,]+)\s*Ads/i);
@@ -175,7 +158,6 @@ function parseBenchmark(title) {
 }
 
 function computeStress(r) {
-  // A: Used cars (baseline 38,770 May 2026)
   const usedCars = r.motors_usedcars?.used_cars || 38770;
   const dubizzleScore = Math.min(25, Math.max(0, Math.round(((usedCars - 38770) / 38770) * 100 / 0.4)));
   const drops = r.luxury?.drop_count || 1542;
@@ -195,7 +177,6 @@ function computeStress(r) {
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
-// ── Proxy ─────────────────────────────────────────────────────────────────────
 let proxyUAE;
 try {
   proxyUAE = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
@@ -206,10 +187,24 @@ try {
   proxyUS = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'US' });
 } catch (e) { console.log('US proxy failed: ' + e.message); }
 
-// ── Shared request handler ────────────────────────────────────────────────────
 async function handleRequest({ request, page, log }) {
   const { id, group, key } = request.userData;
   log.info('Scraping: ' + id);
+
+  // Anti-bot: realistic browser headers
+  await page.setExtraHTTPHeaders({
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+    'Cache-Control': 'no-cache',
+    'Sec-Ch-Ua': '"Chromium";v="124", "Not(A:Brand";v="24", "Google Chrome";v="124"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1'
+  });
 
   try { await page.waitForLoadState('networkidle', { timeout: 25000 }); }
   catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
@@ -222,12 +217,12 @@ async function handleRequest({ request, page, log }) {
 
   let parsed = null;
 
-  // Per-emirate property
   if (group === 'prop_sale') {
     parsed = await parseListingCount(page);
     if (!parsed) throw new Error(id + ' parse failed');
     results.property_sale[key] = parsed;
     log.info('OK ' + id + ': ' + key + '=' + parsed);
+    await sleep(2000); // Polite delay between Dubizzle requests
     await page.close();
     return;
   }
@@ -236,17 +231,17 @@ async function handleRequest({ request, page, log }) {
     if (!parsed) throw new Error(id + ' parse failed');
     results.property_rent[key] = parsed;
     log.info('OK ' + id + ': ' + key + '=' + parsed);
+    await sleep(2000);
     await page.close();
     return;
   }
-
-  // Classified categories
   if (group === 'classified') {
     parsed = await parseListingCount(page);
     if (!parsed) throw new Error(id + ' parse failed');
     if (!results.classified) results.classified = {};
     results.classified[key] = parsed;
     log.info('OK ' + id + ': ' + key + '=' + parsed);
+    await sleep(2000);
     await page.close();
     return;
   }
@@ -295,6 +290,7 @@ async function handleRequest({ request, page, log }) {
       break;
   }
   log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 120));
+  await sleep(1500);
   await page.close();
 }
 
@@ -303,30 +299,42 @@ function failedHandler({ request, error }) {
   results.errors.push({ source: request.userData.id, error: error.message });
 }
 
-// ── Crawler 1: UAE proxy (Dubizzle + Bayut, sequential) ──────────────────────
+// CRITICAL: useSessionPool keeps same proxy IP per session, persistCookiesPerSession reuses cookies
+// This makes us look like a real user instead of fresh anonymous request each time
 const uaeCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyUAE,
-  maxRequestRetries: 1,
+  useSessionPool: true,
+  persistCookiesPerSession: true,
+  sessionPoolOptions: { maxPoolSize: 1 },
+  maxRequestRetries: 2,
   navigationTimeoutSecs: 90,
   requestHandlerTimeoutSecs: 120,
   maxConcurrency: 1,
-  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
+  launchContext: {
+    launchOptions: {
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-blink-features=AutomationControlled']
+    },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  },
   requestHandler: handleRequest,
   failedRequestHandler: failedHandler
 });
 
-// ── Crawler 2: US proxy (LuxuryPriceDrops only) ──────────────────────────────
 const usCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyUS,
   maxRequestRetries: 2,
   navigationTimeoutSecs: 60,
   requestHandlerTimeoutSecs: 90,
   maxConcurrency: 1,
-  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
+  launchContext: {
+    launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  },
   requestHandler: handleRequest,
   failedRequestHandler: failedHandler
 });
 
+// Order: Bayut FIRST (warm up), THEN jobs/motors (warm Dubizzle session), THEN classified, THEN per-emirate
 const uaeTargets = [
   ...SINGLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })),
   ...CLASSIFIED_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'classified', key: t.key } })),
@@ -341,15 +349,10 @@ const stress = computeStress(results);
 const bayutSaleCount = results.bayut_ajman_sale?.count || null;
 const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
 
-const propertySaleEntry = Object.keys(results.property_sale).length > 0
-  ? { date: TODAY, ...results.property_sale }
-  : null;
-const propertyRentEntry = Object.keys(results.property_rent).length > 0
-  ? { date: TODAY, ...results.property_rent }
-  : null;
+const propertySaleEntry = Object.keys(results.property_sale).length > 0 ? { date: TODAY, ...results.property_sale } : null;
+const propertyRentEntry = Object.keys(results.property_rent).length > 0 ? { date: TODAY, ...results.property_rent } : null;
 const classifiedEntry = results.classified && Object.keys(results.classified).length > 0
-  ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.classified }
-  : null;
+  ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.classified } : null;
 
 const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
@@ -359,7 +362,7 @@ const output = {
   dubizzle_motors_entry:        results.motors_usedcars ? { date: TODAY, ...results.motors_usedcars } : null,
   dubizzle_property_sale_entry: propertySaleEntry,
   dubizzle_property_rent_entry: propertyRentEntry,
-  luxury_entry:                 results.luxury          ? { date: TODAY, ...results.luxury }           : null,
+  luxury_entry:                 results.luxury          ? { date: TODAY, ...results.luxury }          : null,
   bayut_entry: results.bayut_d9 ? {
     date: TODAY,
     district9_listings: results.bayut_d9.district9_listings,
