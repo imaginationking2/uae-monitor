@@ -8,25 +8,58 @@ const SCRAPED_AT = new Date().toISOString();
 
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
-  jobs_fulltime: null, motors_usedcars: null,
-  property_sale: null, property_rent: null, luxury: null,
-  bayut_d9: null, bayut_ajman_sale: null, bayut_ajman_rent: null,
-  benchmark: null, errors: []
+  jobs_fulltime: null,
+  motors_usedcars: null,
+  property_sale: {},   // {uae, dubai, abu_dhabi, sharjah, ajman, rak, fujairah, uaq, alain}
+  property_rent: {},   // {uae, dubai, abu_dhabi, sharjah, ajman, rak, fujairah, uaq, alain}
+  luxury: null,
+  bayut_d9: null,
+  bayut_ajman_sale: null,
+  bayut_ajman_rent: null,
+  benchmark: null,
+  errors: []
 };
 
-const TARGETS = [
+// ── Per-city URL builders ─────────────────────────────────────────────────────
+const PROP_SALE_TARGETS = [
+  { id: 'prop_sale_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_abudhabi',  key: 'abu_dhabi', url: 'https://abudhabi.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_sharjah',   key: 'sharjah',   url: 'https://sharjah.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_ajman',     key: 'ajman',     url: 'https://ajman.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_rak',       key: 'rak',       url: 'https://rak.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_fujairah',  key: 'fujairah',  url: 'https://fujairah.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_sale_alain',     key: 'alain',     url: 'https://alain.dubizzle.com/en/property-for-sale/residential/' }
+];
+
+const PROP_RENT_TARGETS = [
+  { id: 'prop_rent_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_abudhabi',  key: 'abu_dhabi', url: 'https://abudhabi.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_sharjah',   key: 'sharjah',   url: 'https://sharjah.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_ajman',     key: 'ajman',     url: 'https://ajman.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_rak',       key: 'rak',       url: 'https://rak.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_fujairah',  key: 'fujairah',  url: 'https://fujairah.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'prop_rent_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-rent/residential/' }
+];
+
+const SINGLE_TARGETS = [
   { id: 'jobs',             url: 'https://uae.dubizzle.com/jobs/' },
   { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
-  { id: 'prop_sale',        url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_rent',        url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' },
   { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
   { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
   { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
   { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' }
 ];
 
-// Jobs: <a href="/jobs/s/type/full-time/"><div><span>Full Time</span><p>(1,213+ Jobs)</p></div></a>
+const LUXURY_TARGETS = [
+  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
+];
+
+// ── DOM-based parsers using exact selectors ──────────────────────────────────
+
+// Jobs full-time
 async function parseJobs(page, log) {
   try { await page.waitForSelector('a[href*="full-time"] p', { timeout: 15000 }); }
   catch { log.warning('jobs: waitForSelector timed out'); }
@@ -43,7 +76,7 @@ async function parseJobs(page, log) {
   });
 }
 
-// Motors: <p data-testid="Used Cars">Used Cars</p><p>38,600</p>
+// Used cars only — drop other motors fields
 async function parseMotors(page, log) {
   try { await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 }); }
   catch { log.warning('motors: waitForSelector timed out'); }
@@ -64,31 +97,26 @@ async function parseMotors(page, log) {
   });
 }
 
-// Property for-sale: <h1>...• 246,503 Ads</h1>
-async function parsePropertySale(page) {
+// Property count from .mui-style-1cryx81 span (confirmed selector for both sale and rent)
+async function parsePropertyCount(page) {
   return page.evaluate(() => {
-    const h1 = document.querySelector('h1');
-    if (h1) {
-      const m = h1.textContent.match(/([\d,]+)\s*Ads/i);
-      if (m) return { total_uae: parseInt(m[1].replace(/,/g, '')) };
+    // Primary: <span class="mui-style-1cryx81">271,377 Ads</span>
+    const span = document.querySelector('.mui-style-1cryx81');
+    if (span) {
+      const m = span.textContent.match(/([\d,]+)/);
+      if (m) return parseInt(m[1].replace(/,/g, ''));
     }
-    return null;
-  });
-}
-
-// Property for-rent: <div data-testid="page-title"><h1>...• 220,048 Ads</h1></div>
-async function parsePropertyRent(page) {
-  return page.evaluate(() => {
+    // Fallback: h1 with "Ads" pattern
     const h1 = document.querySelector('[data-testid="page-title"] h1') || document.querySelector('h1');
     if (h1) {
       const m = h1.textContent.match(/([\d,]+)\s*Ads/i);
-      if (m) return { total_uae: parseInt(m[1].replace(/,/g, '')) };
+      if (m) return parseInt(m[1].replace(/,/g, ''));
     }
     return null;
   });
 }
 
-// Luxury: <strong data-meta="count">2,775</strong>
+// Luxury
 async function parseLuxury(page) {
   return page.evaluate(() => {
     const countEl = document.querySelector('[data-meta="count"]');
@@ -109,6 +137,7 @@ async function parseLuxury(page) {
   });
 }
 
+// Bayut text-based
 function parseBayutCount(text) {
   if (!text) return null;
   const cl = text.split('\n').map(l => l.trim()).find(l => /\d+ to \d+ of [\d,]+ Propert/i.test(l));
@@ -148,18 +177,22 @@ function computeStress(r) {
   const ratio = (sale && rent) ? parseFloat((sale / rent).toFixed(3)) : 0;
   const ratioScore = Math.min(25, Math.max(0, Math.round(ratio * 10 - 12)));
   const total = dubizzleScore + luxuryScore + bayutScore + ratioScore;
-  const band = total < 30 ? 'Stable - no signal' : total < 45 ? 'Mild stress building' : total < 60 ? 'Clear stress building' : total < 75 ? 'High stress - monitor closely' : 'Crisis signal';
+  const band = total < 30 ? 'Stable - no signal'
+    : total < 45 ? 'Mild stress building'
+    : total < 60 ? 'Clear stress building'
+    : total < 75 ? 'High stress - monitor closely'
+    : 'Crisis signal';
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
-// ── Two proxy configurations ──────────────────────────────────────────────────
-// UAE proxy for Dubizzle/Bayut (local sites work better with UAE IPs)
+// ── Proxy configurations ──────────────────────────────────────────────────────
+// UAE proxy for ALL Dubizzle/Bayut targets (default — 23 URLs)
 let proxyUAE;
 try {
   proxyUAE = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
 } catch (e) { console.log('UAE proxy failed: ' + e.message); }
 
-// US proxy for LuxuryPriceDrops (blocks UAE IPs specifically)
+// US proxy ONLY for LuxuryPriceDrops (blocks UAE IPs)
 let proxyUS;
 try {
   proxyUS = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'US' });
@@ -167,7 +200,7 @@ try {
 
 // ── Shared request handler ────────────────────────────────────────────────────
 async function handleRequest({ request, page, log }) {
-  const { id } = request.userData;
+  const { id, group, key } = request.userData;
   log.info('Scraping: ' + id);
 
   try { await page.waitForLoadState('networkidle', { timeout: 30000 }); }
@@ -181,26 +214,35 @@ async function handleRequest({ request, page, log }) {
 
   let parsed = null;
 
+  // Property for-sale / for-rent (per-emirate)
+  if (group === 'prop_sale') {
+    parsed = await parsePropertyCount(page);
+    if (!parsed) throw new Error(id + ' parse failed');
+    results.property_sale[key] = parsed;
+    log.info('OK ' + id + ': ' + key + '=' + parsed);
+    await page.close();
+    return;
+  }
+  if (group === 'prop_rent') {
+    parsed = await parsePropertyCount(page);
+    if (!parsed) throw new Error(id + ' parse failed');
+    results.property_rent[key] = parsed;
+    log.info('OK ' + id + ': ' + key + '=' + parsed);
+    await page.close();
+    return;
+  }
+
+  // Other targets
   switch (id) {
     case 'jobs':
       parsed = await parseJobs(page, log);
-      if (!parsed) throw new Error('dubizzle_jobs parse failed - fullTime=null');
+      if (!parsed) throw new Error('jobs parse failed - fullTime=null');
       results.jobs_fulltime = parsed;
       break;
     case 'motors':
       parsed = await parseMotors(page, log);
-      if (!parsed) throw new Error('dubizzle_motors parse failed');
+      if (!parsed) throw new Error('motors parse failed');
       results.motors_usedcars = parsed;
-      break;
-    case 'prop_sale':
-      parsed = await parsePropertySale(page);
-      if (!parsed) throw new Error('prop_sale parse failed');
-      results.property_sale = parsed;
-      break;
-    case 'prop_rent':
-      parsed = await parsePropertyRent(page);
-      if (!parsed) throw new Error('prop_rent parse failed');
-      results.property_rent = parsed;
       break;
     case 'luxury':
       parsed = await parseLuxury(page);
@@ -228,12 +270,11 @@ async function handleRequest({ request, page, log }) {
       results.bayut_ajman_rent = parsed;
       break;
     }
-    case 'benchmark': {
+    case 'benchmark':
       parsed = parseBenchmark(title);
       if (!parsed) throw new Error('benchmark parse failed');
       results.benchmark = parsed;
       break;
-    }
   }
   log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 120));
   await page.close();
@@ -244,7 +285,7 @@ function failedHandler({ request, error }) {
   results.errors.push({ source: request.userData.id, error: error.message });
 }
 
-// ── Crawler 1: UAE proxy — Dubizzle + Bayut ───────────────────────────────────
+// ── Crawler 1: UAE proxy (Dubizzle + Bayut, 23 URLs) ─────────────────────────
 const uaeCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyUAE,
   maxRequestRetries: 2,
@@ -256,7 +297,7 @@ const uaeCrawler = new PlaywrightCrawler({
   failedRequestHandler: failedHandler
 });
 
-// ── Crawler 2: US proxy — LuxuryPriceDrops only ───────────────────────────────
+// ── Crawler 2: US proxy (LuxuryPriceDrops only) ──────────────────────────────
 const usCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyUS,
   maxRequestRetries: 2,
@@ -268,23 +309,34 @@ const usCrawler = new PlaywrightCrawler({
   failedRequestHandler: failedHandler
 });
 
-const UAE_TARGETS = TARGETS.filter(t => t.id !== 'luxury');
-const LUXURY_TARGETS = TARGETS.filter(t => t.id === 'luxury');
+// Build UAE-proxy targets: jobs, motors, bayut, all per-city property
+const uaeTargets = [
+  ...SINGLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })),
+  ...PROP_SALE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'prop_sale', key: t.key } })),
+  ...PROP_RENT_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'prop_rent', key: t.key } }))
+];
 
-await uaeCrawler.run(UAE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
+await uaeCrawler.run(uaeTargets);
 await usCrawler.run(LUXURY_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
 const bayutSaleCount = results.bayut_ajman_sale?.count || null;
 const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
 
+const propertySaleEntry = Object.keys(results.property_sale).length > 0
+  ? { date: TODAY, ...results.property_sale }
+  : null;
+const propertyRentEntry = Object.keys(results.property_rent).length > 0
+  ? { date: TODAY, ...results.property_rent }
+  : null;
+
 const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
   stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
   dubizzle_jobs_entry:          results.jobs_fulltime   ? { date: TODAY, ...results.jobs_fulltime }   : null,
   dubizzle_motors_entry:        results.motors_usedcars ? { date: TODAY, ...results.motors_usedcars } : null,
-  dubizzle_property_sale_entry: results.property_sale   ? { date: TODAY, ...results.property_sale }   : null,
-  dubizzle_property_rent_entry: results.property_rent   ? { date: TODAY, ...results.property_rent }   : null,
+  dubizzle_property_sale_entry: propertySaleEntry,
+  dubizzle_property_rent_entry: propertyRentEntry,
   luxury_entry:                 results.luxury          ? { date: TODAY, ...results.luxury }           : null,
   bayut_entry: results.bayut_d9 ? {
     date: TODAY,
