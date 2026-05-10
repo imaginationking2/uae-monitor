@@ -8,10 +8,10 @@ const SCRAPED_AT = new Date().toISOString();
 
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
-  dubizzle_jobs: null,
-  dubizzle_motors: null,
-  dubizzle_property_sale: null,
-  dubizzle_property_rent: null,
+  jobs_fulltime: null,
+  motors_usedcars: null,
+  property_sale: null,
+  property_rent: null,
   luxury: null,
   bayut_d9: null,
   bayut_ajman_sale: null,
@@ -20,133 +20,173 @@ const results = {
   errors: []
 };
 
-// ── Targets ───────────────────────────────────────────────────────────────────
 const TARGETS = [
-  // Dubizzle — use residential proxy (previously worked for classified)
-  { id: 'dubizzle_jobs',          url: 'https://uae.dubizzle.com/jobs/' },
-  { id: 'dubizzle_motors',        url: 'https://uae.dubizzle.com/motors/' },
-  { id: 'dubizzle_property_sale', url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'dubizzle_property_rent', url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
-  // Luxury — direct (no proxy needed)
-  { id: 'luxury',                 url: 'https://www.luxurypricedrops.com/dubai/' },
-  // Bayut — residential proxy
-  { id: 'bayut_d9',               url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
-  { id: 'bayut_ajman_sale',       url: 'https://www.bayut.com/for-sale/property/ajman/' },
-  { id: 'bayut_ajman_rent',       url: 'https://www.bayut.com/to-rent/property/ajman/' },
-  { id: 'benchmark',              url: 'https://www.bayut.com/property/details-13073585.html' }
+  { id: 'jobs',             url: 'https://uae.dubizzle.com/jobs/' },
+  { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
+  { id: 'prop_sale',        url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_rent',        url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
+  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' },
+  { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
+  { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
+  { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
+  { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' }
 ];
 
-// ── Parsers ───────────────────────────────────────────────────────────────────
+// ── DOM parsers ───────────────────────────────────────────────────────────────
 
-function parseDubizzleJobs(page_eval) {
-  // Target: <a href="/jobs/s/type/full-time/"> ... <p ...>(1,211+ Jobs)</p>
-  // page_eval returns {fullTime, total}
-  if (!page_eval) return null;
-  const ft = page_eval.fullTime;
-  const m = ft?.match(/([\d,]+)/);
-  const fullTimeCount = m ? parseInt(m[1].replace(/,/g,'')) : null;
-  if (!fullTimeCount) return null;
-  return { full_time_jobs: fullTimeCount };
+// Jobs: find the full-time link that contains "Jobs" in text, then get the <p> count
+// Structure: <a href="/jobs/s/type/full-time/"><div><span>Full Time</span><p>(1,213+ Jobs)</p></div></a>
+async function parseJobs(page, log) {
+  // Wait for the job type cards to render
+  try {
+    await page.waitForSelector('a[href*="full-time"] p', { timeout: 15000 });
+  } catch {
+    log.warning('jobs: waitForSelector timed out, trying anyway');
+  }
+  return page.evaluate(() => {
+    // Find the link that has both "full-time" in href AND contains a <p> with Jobs count
+    const ftLinks = Array.from(document.querySelectorAll('a[href*="full-time"]'));
+    for (const link of ftLinks) {
+      const p = link.querySelector('p');
+      if (p && /Jobs/i.test(p.textContent)) {
+        const m = p.textContent.match(/([\d,]+)/);
+        if (m) return { full_time: parseInt(m[1].replace(/,/g, '')) };
+      }
+    }
+    // Fallback: any <p> with "(N+ Jobs)" pattern
+    const allP = Array.from(document.querySelectorAll('p'));
+    for (const p of allP) {
+      if (/\(\d[\d,]+\+?\s*Jobs\)/i.test(p.textContent)) {
+        const m = p.textContent.match(/([\d,]+)/);
+        if (m) return { full_time: parseInt(m[1].replace(/,/g, '')) };
+      }
+    }
+    return null;
+  });
 }
 
-function parseDubizzleMotors(page_eval) {
-  // Target: <p data-testid="Used Cars">Used Cars</p><p>38,596</p>
-  if (!page_eval || !page_eval.usedCars) return null;
-  const m = page_eval.usedCars.match(/([\d,]+)/);
-  return m ? { used_cars: parseInt(m[1].replace(/,/g,'')) } : null;
+// Motors: <p data-testid="Used Cars">Used Cars</p><p>38,600</p>
+async function parseMotors(page, log) {
+  try {
+    await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 });
+  } catch {
+    log.warning('motors: waitForSelector timed out');
+  }
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-testid="Used Cars"]');
+    if (el && el.nextElementSibling) {
+      const m = el.nextElementSibling.textContent.match(/([\d,]+)/);
+      if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
+    }
+    // Fallback: find "Used Cars" text sibling
+    const allP = Array.from(document.querySelectorAll('p'));
+    for (let i = 0; i < allP.length - 1; i++) {
+      if (allP[i].textContent.trim() === 'Used Cars') {
+        const m = allP[i + 1].textContent.match(/([\d,]+)/);
+        if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
+      }
+    }
+    return null;
+  });
 }
 
-function parseDubizzlePropertySale(page_eval) {
-  // Target: <h1>Properties for sale in UAE<span>•</span><span>246,503 Ads</span></h1>
-  if (!page_eval || !page_eval.total) return null;
-  const m = page_eval.total.match(/([\d,]+)/);
-  return m ? { total_uae: parseInt(m[1].replace(/,/g,'')) } : null;
+// Property for-sale: <h1>...• 246,503 Ads</h1>
+async function parsePropertySale(page) {
+  return page.evaluate(() => {
+    const h1 = document.querySelector('h1');
+    if (h1) {
+      const m = h1.textContent.match(/([\d,]+)\s*Ads/i);
+      if (m) return { total_uae: parseInt(m[1].replace(/,/g, '')) };
+    }
+    return null;
+  });
 }
 
-function parseDubizzlePropertyRent(page_eval) {
-  // Target: <h1>Properties for rent in UAE<span>•</span><span>220,048 Ads</span></h1>
-  // + emirate breakdown from city filter chips
-  if (!page_eval || !page_eval.total) return null;
-  const m = page_eval.total.match(/([\d,]+)/);
-  const total = m ? parseInt(m[1].replace(/,/g,'')) : null;
-  if (!total) return null;
-  return {
-    total_uae: total,
-    dubai: page_eval.dubai || null,
-    ajman: page_eval.ajman || null,
-    sharjah: page_eval.sharjah || null,
-    abu_dhabi: page_eval.abu_dhabi || null
-  };
+// Property for-rent: <div data-testid="page-title"><h1>...• 220,048 Ads</h1></div>
+async function parsePropertyRent(page) {
+  return page.evaluate(() => {
+    const h1 = document.querySelector('[data-testid="page-title"] h1') || document.querySelector('h1');
+    if (h1) {
+      const m = h1.textContent.match(/([\d,]+)\s*Ads/i);
+      if (m) return { total_uae: parseInt(m[1].replace(/,/g, '')) };
+    }
+    return null;
+  });
 }
 
-function parseLuxury(page_eval) {
-  // Target: "2,775 drops  −6.6% avg  38.0K watching"
-  if (!page_eval || !page_eval.statsText) return null;
-  const dropM = page_eval.statsText.match(/([\d,]+)\s*drops/i);
-  const avgM = page_eval.statsText.match(/−([\d.]+)%\s*avg/i);
-  const watchM = page_eval.statsText.match(/([\d.]+)K\s*watching/i);
-  const drops = dropM ? parseInt(dropM[1].replace(/,/g,'')) : null;
-  if (!drops) return null;
-  return {
-    drop_count: drops,
-    avg_drop_pct: avgM ? parseFloat(avgM[1]) : null,
-    watching: watchM ? Math.round(parseFloat(watchM[1]) * 1000) : null
-  };
+// Luxury: <strong data-meta="count">2,775</strong>
+async function parseLuxury(page) {
+  return page.evaluate(() => {
+    const countEl = document.querySelector('[data-meta="count"]');
+    const drop_count = countEl ? parseInt(countEl.textContent.replace(/,/g, '')) : null;
+    if (!drop_count) return null;
+    // Avg drop from mstat-value elements
+    const mstatEls = Array.from(document.querySelectorAll('[class*="mstat-value"]'));
+    let avg_drop_pct = null;
+    for (const el of mstatEls) {
+      const m = el.textContent.match(/[\d.]+/);
+      if (m) { avg_drop_pct = parseFloat(m[0]); break; }
+    }
+    // Max drop from any element with "−N%" pattern
+    const pctEls = Array.from(document.querySelectorAll('*')).filter(e =>
+      e.children.length === 0 && /^[\u2212\-][\d.]+%$/.test(e.textContent.trim())
+    );
+    const pcts = pctEls.map(e => parseFloat(e.textContent.replace(/[\u2212\-]/, '')));
+    const max_drop_pct = pcts.length ? Math.max(...pcts) : null;
+    return { drop_count, avg_drop_pct, max_drop_pct };
+  });
 }
 
+// ── Bayut text parsers ────────────────────────────────────────────────────────
 function parseBayutCount(text) {
   if (!text) return null;
-  const cl = text.split('\n').map(l=>l.trim()).find(l=>/\d+ to \d+ of [\d,]+ Propert/i.test(l));
-  if (cl) return parseInt(cl.match(/of ([\d,]+)/)?.[1]?.replace(/,/g,''));
+  const cl = text.split('\n').map(l => l.trim()).find(l => /\d+ to \d+ of [\d,]+ Propert/i.test(l));
+  if (cl) return parseInt(cl.match(/of ([\d,]+)/)?.[1]?.replace(/,/g, ''));
   const m = text.match(/([\d,]+)\s+Propert/i);
-  return m ? parseInt(m[1].replace(/,/g,'')) : null;
+  return m ? parseInt(m[1].replace(/,/g, '')) : null;
 }
 
 function parseBayutD9(text) {
   const count = parseBayutCount(text);
-  const am = text?.split('\n').map(l=>l.trim()).find(l=>/average sale price.*AED/i.test(l));
-  const avg = am ? parseInt(am.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g,'')) : null;
+  const am = text?.split('\n').map(l => l.trim()).find(l => /average sale price.*AED/i.test(l));
+  const avg = am ? parseInt(am.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g, '')) : null;
   return count != null ? { district9_listings: count, avg_sale_price: avg } : null;
 }
 
 function parseBayutAjmanSale(text) {
   const count = parseBayutCount(text);
-  const avgLine = text?.split('\n').map(l=>l.trim()).find(l=>/average sale price.*AED/i.test(l));
-  const avg = avgLine ? parseInt(avgLine.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g,'')) : null;
+  const avgLine = text?.split('\n').map(l => l.trim()).find(l => /average sale price.*AED/i.test(l));
+  const avg = avgLine ? parseInt(avgLine.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g, '')) : null;
   return count != null ? { count, avg_sale_price: avg } : null;
 }
 
 function parseBenchmark(title) {
   const m = title?.match(/AED ([\d.]+)M/i);
-  const price = m ? Math.round(parseFloat(m[1]) * 1e6) : null;
-  return price ? { benchmark_price_aed: price, benchmark_flag: 'NO CHANGE' } : null;
+  return m ? { benchmark_price_aed: Math.round(parseFloat(m[1]) * 1e6) } : null;
 }
 
 function computeStress(r) {
-  // Keep original 4-component model — dubizzle component now uses full_time_jobs as proxy
-  // Baseline full_time_jobs: 1,211 (May 2026) — INVERTED: fewer jobs = more stress
-  const jobs = r.dubizzle_jobs?.full_time_jobs || 1211;
-  const jobsScore = Math.min(25, Math.max(0, Math.round((1211 - jobs) / 1211 * 100 / 0.4)));
-
+  // A: Used cars as proxy for consumer stress (baseline 38,770 May 2026)
+  const usedCars = r.motors_usedcars?.used_cars || 38770;
+  const dubizzleScore = Math.min(25, Math.max(0, Math.round(((usedCars - 38770) / 38770) * 100 / 0.4)));
+  // B: Luxury drops
   const drops = r.luxury?.drop_count || 1542;
   const luxuryScore = Math.min(25, Math.round((drops - 1542) / 1542 * 100 / 2));
-
+  // C: Bayut D9
   const d9 = r.bayut_d9?.district9_listings ?? 31;
   const bayutScore = Math.min(25, Math.round((31 - d9) / 31 * 100 / 2));
-
+  // D: Ajman ratio
   const sale = r.bayut_ajman_sale?.count || 0;
   const rent = r.bayut_ajman_rent || 1;
   const ratio = (sale && rent) ? parseFloat((sale / rent).toFixed(3)) : 0;
   const ratioScore = Math.min(25, Math.max(0, Math.round(ratio * 10 - 12)));
-
-  const total = jobsScore + luxuryScore + bayutScore + ratioScore;
+  const total = dubizzleScore + luxuryScore + bayutScore + ratioScore;
   const band = total < 30 ? 'Stable - no signal'
     : total < 45 ? 'Mild stress building'
     : total < 60 ? 'Clear stress building'
     : total < 75 ? 'High stress - monitor closely'
     : 'Crisis signal';
-
-  return { total, band, components: { jobs: jobsScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
+  return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
 // ── Proxy ─────────────────────────────────────────────────────────────────────
@@ -172,162 +212,81 @@ const crawler = new PlaywrightCrawler({
     catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
 
     const title = await page.title();
-    log.info(id + ': title="' + title.substring(0,80) + '"');
+    const bodyLen = await page.evaluate(() => document.body?.innerText?.length || 0);
+    log.info(id + ': title="' + title.substring(0, 70) + '" bodyLen=' + bodyLen);
 
-    if (/captcha|robot|blocked|challenge|interruption/i.test(title)) {
-      throw new Error('Blocked on ' + id + ': ' + title);
-    }
+    if (bodyLen < 200) throw new Error('Empty body on ' + id);
 
     let parsed = null;
 
-    switch(id) {
-
-      case 'dubizzle_jobs': {
-        // Extra wait for React to render job type cards
-        await sleep(3000);
-        const eval_result = await page.evaluate(() => {
-          // Full-time: <a href="/jobs/s/type/full-time/"> ... <p>(1,211+ Jobs)</p>
-          const ftLink = document.querySelector('a[href*="full-time"]');
-          const ftP = ftLink?.querySelector('p');
-          const fullTime = ftP?.textContent?.trim() || null;
-          // Also grab total from page heading if available
-          const heading = document.querySelector('h1, [class*="heading"]')?.textContent?.trim() || null;
-          return { fullTime, heading };
-        });
-        log.info('jobs eval: ' + JSON.stringify(eval_result));
-        parsed = parseDubizzleJobs(eval_result);
-        if (!parsed) throw new Error('dubizzle_jobs parse failed - fullTime=' + eval_result?.fullTime);
-        results.dubizzle_jobs = parsed;
+    switch (id) {
+      case 'jobs':
+        parsed = await parseJobs(page, log);
+        if (!parsed) throw new Error('dubizzle_jobs parse failed - fullTime=null');
+        results.jobs_fulltime = parsed;
+        log.info('OK dubizzle_jobs: ' + JSON.stringify(parsed));
         break;
-      }
 
-      case 'dubizzle_motors': {
-        await sleep(2000);
-        const eval_result = await page.evaluate(() => {
-          // <p data-testid="Used Cars">Used Cars</p><p>38,596</p>
-          const usedCarsLabel = document.querySelector('p[data-testid="Used Cars"]');
-          const usedCarsCount = usedCarsLabel?.nextElementSibling?.textContent?.trim() || null;
-          // Fallback: find by text proximity
-          const allP = Array.from(document.querySelectorAll('p'));
-          let usedCarsAlt = null;
-          for (let i = 0; i < allP.length - 1; i++) {
-            if (allP[i].textContent.trim() === 'Used Cars') {
-              usedCarsAlt = allP[i+1]?.textContent?.trim();
-              break;
-            }
-          }
-          return { usedCars: usedCarsCount || usedCarsAlt };
-        });
-        log.info('motors eval: ' + JSON.stringify(eval_result));
-        parsed = parseDubizzleMotors(eval_result);
-        if (!parsed) throw new Error('dubizzle_motors parse failed - usedCars=' + eval_result?.usedCars);
-        results.dubizzle_motors = parsed;
+      case 'motors':
+        parsed = await parseMotors(page, log);
+        if (!parsed) throw new Error('dubizzle_motors parse failed');
+        results.motors_usedcars = parsed;
+        log.info('OK dubizzle_motors: ' + JSON.stringify(parsed));
         break;
-      }
 
-      case 'dubizzle_property_sale': {
-        await sleep(2000);
-        const eval_result = await page.evaluate(() => {
-          // <h1>Properties for sale in UAE<span>•</span><span>246,503 Ads</span></h1>
-          const h1 = document.querySelector('h1');
-          const spans = h1?.querySelectorAll('span');
-          const countSpan = spans ? Array.from(spans).find(s => /\d/.test(s.textContent)) : null;
-          const total = countSpan?.textContent?.trim() || h1?.textContent?.trim() || null;
-          return { total };
-        });
-        log.info('prop_sale eval: ' + JSON.stringify(eval_result));
-        parsed = parseDubizzlePropertySale(eval_result);
-        if (!parsed) throw new Error('dubizzle_property_sale parse failed - total=' + eval_result?.total);
-        results.dubizzle_property_sale = parsed;
+      case 'prop_sale':
+        parsed = await parsePropertySale(page);
+        if (!parsed) throw new Error('dubizzle_property_sale parse failed');
+        results.property_sale = parsed;
+        log.info('OK dubizzle_property_sale: ' + JSON.stringify(parsed));
         break;
-      }
 
-      case 'dubizzle_property_rent': {
-        await sleep(2000);
-        const eval_result = await page.evaluate(() => {
-          // <h1>Properties for rent in UAE<span>•</span><span>220,048 Ads</span></h1>
-          const h1 = document.querySelector('[data-testid="page-title"] h1') || document.querySelector('h1');
-          const spans = h1?.querySelectorAll('span');
-          const countSpan = spans ? Array.from(spans).find(s => /\d/.test(s.textContent)) : null;
-          const total = countSpan?.textContent?.trim() || null;
-          // Emirate counts from filter chips: "Dubai (111,367)" style
-          const lines = document.body.innerText.split('\n').map(l=>l.trim()).filter(Boolean);
-          const getEmirate = (name) => {
-            const idx = lines.findIndex(l => new RegExp('^' + name + '$','i').test(l));
-            if (idx < 0) return null;
-            const ctx = lines.slice(idx, idx+5).join(' ');
-            const m = ctx.match(/([\d,]{4,})/);
-            return m ? parseInt(m[1].replace(/,/g,'')) : null;
-          };
-          return {
-            total,
-            dubai: getEmirate('Dubai'),
-            ajman: getEmirate('Ajman'),
-            sharjah: getEmirate('Sharjah'),
-            abu_dhabi: getEmirate('Abu Dhabi')
-          };
-        });
-        log.info('prop_rent eval: ' + JSON.stringify(eval_result));
-        parsed = parseDubizzlePropertyRent(eval_result);
-        if (!parsed) throw new Error('dubizzle_property_rent parse failed - total=' + eval_result?.total);
-        results.dubizzle_property_rent = parsed;
+      case 'prop_rent':
+        parsed = await parsePropertyRent(page);
+        if (!parsed) throw new Error('dubizzle_property_rent parse failed');
+        results.property_rent = parsed;
+        log.info('OK dubizzle_property_rent: ' + JSON.stringify(parsed));
         break;
-      }
 
-      case 'luxury': {
-        await sleep(2000);
-        const eval_result = await page.evaluate(() => {
-          // Find: "2,775 drops  −6.6% avg  38.0K watching"
-          const allText = document.body.innerText;
-          const lines = allText.split('\n').map(l=>l.trim()).filter(Boolean);
-          const statsLine = lines.find(l => /drops.*avg.*watching/i.test(l) || /[\d,]+\s*drops/i.test(l));
-          // Also try finding individual elements
-          const dropEl = Array.from(document.querySelectorAll('*')).find(e =>
-            e.children.length === 0 && /^[\d,]+$/.test(e.textContent.trim()) &&
-            parseInt(e.textContent.replace(/,/g,'')) > 100
-          );
-          return { statsText: statsLine, dropCount: dropEl?.textContent?.trim() };
-        });
-        log.info('luxury eval: ' + JSON.stringify(eval_result));
-        parsed = parseLuxury(eval_result);
-        if (!parsed) throw new Error('luxury parse failed - stats=' + eval_result?.statsText);
+      case 'luxury':
+        parsed = await parseLuxury(page);
+        if (!parsed) throw new Error('luxury parse failed');
         results.luxury = parsed;
+        log.info('OK luxury: ' + JSON.stringify(parsed));
         break;
-      }
 
       case 'bayut_d9': {
-        const bodyText = await page.evaluate(() => document.body?.innerText || '');
-        parsed = parseBayutD9(bodyText);
+        const text = await page.evaluate(() => document.body?.innerText || '');
+        parsed = parseBayutD9(text);
         if (!parsed) throw new Error('bayut_d9 parse failed');
         results.bayut_d9 = parsed;
+        log.info('OK bayut_d9: ' + JSON.stringify(parsed));
         break;
       }
-
       case 'bayut_ajman_sale': {
-        const bodyText = await page.evaluate(() => document.body?.innerText || '');
-        parsed = parseBayutAjmanSale(bodyText);
+        const text = await page.evaluate(() => document.body?.innerText || '');
+        parsed = parseBayutAjmanSale(text);
         if (!parsed) throw new Error('bayut_ajman_sale parse failed');
         results.bayut_ajman_sale = parsed;
+        log.info('OK bayut_ajman_sale: ' + JSON.stringify(parsed));
         break;
       }
-
       case 'bayut_ajman_rent': {
-        const bodyText = await page.evaluate(() => document.body?.innerText || '');
-        parsed = parseBayutCount(bodyText);
+        const text = await page.evaluate(() => document.body?.innerText || '');
+        parsed = parseBayutCount(text);
         if (!parsed) throw new Error('bayut_ajman_rent parse failed');
         results.bayut_ajman_rent = parsed;
+        log.info('OK bayut_ajman_rent: ' + parsed);
         break;
       }
-
       case 'benchmark': {
         parsed = parseBenchmark(title);
         if (!parsed) throw new Error('benchmark parse failed');
         results.benchmark = parsed;
+        log.info('OK benchmark: ' + JSON.stringify(parsed));
         break;
       }
     }
-
-    log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0,120));
     await page.close();
   },
 
@@ -346,11 +305,11 @@ const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
 const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
   stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
-  dubizzle_jobs_entry: results.dubizzle_jobs ? { date: TODAY, ...results.dubizzle_jobs } : null,
-  dubizzle_motors_entry: results.dubizzle_motors ? { date: TODAY, ...results.dubizzle_motors } : null,
-  dubizzle_property_sale_entry: results.dubizzle_property_sale ? { date: TODAY, ...results.dubizzle_property_sale } : null,
-  dubizzle_property_rent_entry: results.dubizzle_property_rent ? { date: TODAY, ...results.dubizzle_property_rent } : null,
-  luxury_entry: results.luxury ? { date: TODAY, ...results.luxury } : null,
+  dubizzle_jobs_entry:          results.jobs_fulltime   ? { date: TODAY, ...results.jobs_fulltime }   : null,
+  dubizzle_motors_entry:        results.motors_usedcars ? { date: TODAY, ...results.motors_usedcars } : null,
+  dubizzle_property_sale_entry: results.property_sale   ? { date: TODAY, ...results.property_sale }   : null,
+  dubizzle_property_rent_entry: results.property_rent   ? { date: TODAY, ...results.property_rent }   : null,
+  luxury_entry:                 results.luxury          ? { date: TODAY, ...results.luxury }           : null,
   bayut_entry: results.bayut_d9 ? {
     date: TODAY,
     district9_listings: results.bayut_d9.district9_listings,
