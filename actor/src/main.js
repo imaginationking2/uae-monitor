@@ -269,8 +269,6 @@ function failedHandler({ request, error }) {
   results.errors.push({ source: request.userData.id, error: error.message });
 }
 
-// SPEED FIX: maxConcurrency 3 (was 1) — cuts total run time roughly in third
-// Also reduced retries to 1 since we're hitting many URLs
 const uaeCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyUAE,
   maxRequestRetries: 1,
