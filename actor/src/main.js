@@ -1,363 +1,261 @@
-import { Actor } from 'apify';
-import { PlaywrightCrawler, sleep } from 'crawlee';
+name: UAE Market Daily Collector
 
-await Actor.init();
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run'
+        required: false
+        default: 'false'
 
-const TODAY = new Date().toISOString().split('T')[0];
-const SCRAPED_AT = new Date().toISOString();
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
 
-const results = {
-  date: TODAY, scraped_at: SCRAPED_AT,
-  jobs_fulltime: null,
-  motors_usedcars: null,
-  property_sale: {},   // {uae, dubai, abu_dhabi, sharjah, ajman, rak, fujairah, uaq, alain}
-  property_rent: {},   // {uae, dubai, abu_dhabi, sharjah, ajman, rak, fujairah, uaq, alain}
-  luxury: null,
-  bayut_d9: null,
-  bayut_ajman_sale: null,
-  bayut_ajman_rent: null,
-  benchmark: null,
-  errors: []
-};
+    steps:
+      - name: Run Apify collector actor
+        id: apify_run
+        run: |
+          RUN_RESPONSE=$(curl -s -X POST \
+            "https://api.apify.com/v2/acts/${{ secrets.APIFY_ACTOR_ID }}/runs" \
+            -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"memory": 4096, "timeout": 3600}')
+          RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              print(d['data']['id'])
+          except Exception as e:
+              print('ERROR: ' + str(e), file=sys.stderr)
+              sys.exit(1)
+          ")
+          echo "Run ID: $RUN_ID"
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          STATUS="RUNNING"
+          # 360 polls × 15s = 90 min max wait
+          for i in $(seq 1 360); do
+            sleep 15
+            POLL=$(curl -s "https://api.apify.com/v2/actor-runs/$RUN_ID" -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
+            STATUS=$(echo "$POLL" | python3 -c "
+          import sys, json
+          try: d=json.load(sys.stdin); print(d['data']['status'])
+          except: print('UNKNOWN')
+          ")
+            echo "[$i/360] Status: $STATUS"
+            if [[ "$STATUS" == "SUCCEEDED" ]]; then echo "Done."; break
+            elif [[ "$STATUS" == "FAILED" || "$STATUS" == "ABORTED" || "$STATUS" == "TIMED-OUT" ]]; then
+              echo "Failed: $STATUS"; exit 1; fi
+          done
+          if [[ "$STATUS" != "SUCCEEDED" ]]; then echo "Polling timeout."; exit 1; fi
 
-// ── Per-city URL builders ─────────────────────────────────────────────────────
-const PROP_SALE_TARGETS = [
-  { id: 'prop_sale_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_abudhabi',  key: 'abu_dhabi', url: 'https://abudhabi.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_sharjah',   key: 'sharjah',   url: 'https://sharjah.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_ajman',     key: 'ajman',     url: 'https://ajman.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_rak',       key: 'rak',       url: 'https://rak.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_fujairah',  key: 'fujairah',  url: 'https://fujairah.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_alain',     key: 'alain',     url: 'https://alain.dubizzle.com/en/property-for-sale/residential/' }
-];
+      - name: Fetch actor output
+        id: fetch_output
+        run: |
+          RUN_ID="${{ steps.apify_run.outputs.run_id }}"
+          sleep 5
+          OUTPUT=$(curl -s "https://api.apify.com/v2/actor-runs/$RUN_ID/key-value-store/records/OUTPUT" -H "Authorization: Bearer ${{ secrets.APIFY_TOKEN }}")
+          echo "$OUTPUT" | python3 -c "
+          import sys, json
+          raw = sys.stdin.read().strip()
+          if not raw:
+              print('ERROR: Empty', file=sys.stderr)
+              sys.exit(1)
+          try:
+              d = json.loads(raw)
+              print('Keys: ' + str(list(d.keys())))
+              errs = d.get('errors', [])
+              print('Errors: ' + str(len(errs)))
+              for e in errs:
+                  print('  FAILED: ' + str(e.get('source')) + ' - ' + str(e.get('error'))[:80], file=sys.stderr)
+          except Exception as ex:
+              print('ERROR: ' + str(ex), file=sys.stderr)
+              sys.exit(1)
+          "
+          echo "$OUTPUT" > /tmp/apify_output.json
+          ERRORS=$(python3 -c "import json; d=json.load(open('/tmp/apify_output.json')); print(len(d.get('errors',[])))")
+          # Allow up to 20 errors (24 targets total — only abort if catastrophic)
+          if [ "$ERRORS" -gt "20" ]; then echo "Too many failures."; exit 1; fi
 
-const PROP_RENT_TARGETS = [
-  { id: 'prop_rent_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_abudhabi',  key: 'abu_dhabi', url: 'https://abudhabi.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_sharjah',   key: 'sharjah',   url: 'https://sharjah.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_ajman',     key: 'ajman',     url: 'https://ajman.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_rak',       key: 'rak',       url: 'https://rak.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_fujairah',  key: 'fujairah',  url: 'https://fujairah.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-rent/residential/' }
-];
+      - name: Fetch current Gist history
+        run: |
+          curl -s "https://gist.githubusercontent.com/imaginationking2/6864f9c206558d36b9777b00f3758087/raw/uae_history.json" -o /tmp/uae_history.json
+          echo "Gist: $(wc -c < /tmp/uae_history.json) bytes"
 
-const SINGLE_TARGETS = [
-  { id: 'jobs',             url: 'https://uae.dubizzle.com/jobs/' },
-  { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
-  { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
-  { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
-  { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
-  { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' }
-];
+      - name: Merge and build updated history JSON
+        run: |
+          python3 << 'PYEOF'
+          import json
+          with open('/tmp/apify_output.json') as f:
+              new_data = json.load(f)
+          with open('/tmp/uae_history.json') as f:
+              history = json.load(f)
+          today = new_data['date']
+          print('Merging: ' + today)
 
-const LUXURY_TARGETS = [
-  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
-];
+          def upsert(series, entry, key='date'):
+              if entry is None: return series
+              series = [e for e in series if e.get(key) != entry.get(key)]
+              series.append(entry)
+              series.sort(key=lambda e: e.get(key, ''))
+              return series
 
-// ── DOM-based parsers using exact selectors ──────────────────────────────────
+          def last_known(series):
+              return series[-1] if series else None
 
-// Jobs full-time
-async function parseJobs(page, log) {
-  try { await page.waitForSelector('a[href*="full-time"] p', { timeout: 15000 }); }
-  catch { log.warning('jobs: waitForSelector timed out'); }
-  return page.evaluate(() => {
-    const ftLinks = Array.from(document.querySelectorAll('a[href*="full-time"]'));
-    for (const link of ftLinks) {
-      const p = link.querySelector('p');
-      if (p && /Jobs/i.test(p.textContent)) {
-        const m = p.textContent.match(/([\d,]+)/);
-        if (m) return { full_time: parseInt(m[1].replace(/,/g, '')) };
-      }
-    }
-    return null;
-  });
-}
+          # Motors (used cars only)
+          if new_data.get('dubizzle_motors_entry'):
+              history.setdefault('dubizzle_motors_series', [])
+              history['dubizzle_motors_series'] = upsert(history['dubizzle_motors_series'], new_data['dubizzle_motors_entry'])
+              print('  motors: OK used_cars=' + str(new_data['dubizzle_motors_entry'].get('used_cars')))
+          else:
+              print('  motors: MISSING')
 
-// Used cars only — drop other motors fields
-async function parseMotors(page, log) {
-  try { await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 }); }
-  catch { log.warning('motors: waitForSelector timed out'); }
-  return page.evaluate(() => {
-    const el = document.querySelector('[data-testid="Used Cars"]');
-    if (el && el.nextElementSibling) {
-      const m = el.nextElementSibling.textContent.match(/([\d,]+)/);
-      if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
-    }
-    const allP = Array.from(document.querySelectorAll('p'));
-    for (let i = 0; i < allP.length - 1; i++) {
-      if (allP[i].textContent.trim() === 'Used Cars') {
-        const m = allP[i + 1].textContent.match(/([\d,]+)/);
-        if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
-      }
-    }
-    return null;
-  });
-}
+          # Property for-sale (per-emirate object)
+          if new_data.get('dubizzle_property_sale_entry'):
+              history.setdefault('dubizzle_property_sale_series', [])
+              history['dubizzle_property_sale_series'] = upsert(history['dubizzle_property_sale_series'], new_data['dubizzle_property_sale_entry'])
+              e = new_data['dubizzle_property_sale_entry']
+              print('  property_sale: OK uae=' + str(e.get('uae')) + ' dubai=' + str(e.get('dubai')) + ' ajman=' + str(e.get('ajman')))
+          else:
+              print('  property_sale: MISSING')
 
-// Property count from .mui-style-1cryx81 span (confirmed selector for both sale and rent)
-async function parsePropertyCount(page) {
-  return page.evaluate(() => {
-    // Primary: <span class="mui-style-1cryx81">271,377 Ads</span>
-    const span = document.querySelector('.mui-style-1cryx81');
-    if (span) {
-      const m = span.textContent.match(/([\d,]+)/);
-      if (m) return parseInt(m[1].replace(/,/g, ''));
-    }
-    // Fallback: h1 with "Ads" pattern
-    const h1 = document.querySelector('[data-testid="page-title"] h1') || document.querySelector('h1');
-    if (h1) {
-      const m = h1.textContent.match(/([\d,]+)\s*Ads/i);
-      if (m) return parseInt(m[1].replace(/,/g, ''));
-    }
-    return null;
-  });
-}
+          # Property for-rent (per-emirate object)
+          if new_data.get('dubizzle_property_rent_entry'):
+              history.setdefault('dubizzle_property_rent_series', [])
+              history['dubizzle_property_rent_series'] = upsert(history['dubizzle_property_rent_series'], new_data['dubizzle_property_rent_entry'])
+              e = new_data['dubizzle_property_rent_entry']
+              print('  property_rent: OK uae=' + str(e.get('uae')) + ' dubai=' + str(e.get('dubai')) + ' ajman=' + str(e.get('ajman')))
+          else:
+              print('  property_rent: MISSING')
 
-// Luxury
-async function parseLuxury(page) {
-  return page.evaluate(() => {
-    const countEl = document.querySelector('[data-meta="count"]');
-    const drop_count = countEl ? parseInt(countEl.textContent.replace(/,/g, '')) : null;
-    if (!drop_count) return null;
-    const mstatEls = Array.from(document.querySelectorAll('[class*="mstat-value"]'));
-    let avg_drop_pct = null;
-    for (const el of mstatEls) {
-      const m = el.textContent.match(/[\d.]+/);
-      if (m) { avg_drop_pct = parseFloat(m[0]); break; }
-    }
-    const pctEls = Array.from(document.querySelectorAll('*')).filter(e =>
-      e.children.length === 0 && /^[\u2212\-][\d.]+%$/.test(e.textContent.trim())
-    );
-    const pcts = pctEls.map(e => parseFloat(e.textContent.replace(/[\u2212\-]/, '')));
-    const max_drop_pct = pcts.length ? Math.max(...pcts) : null;
-    return { drop_count, avg_drop_pct, max_drop_pct };
-  });
-}
+          # Jobs
+          if new_data.get('dubizzle_jobs_entry'):
+              history.setdefault('dubizzle_jobs_series', [])
+              history['dubizzle_jobs_series'] = upsert(history['dubizzle_jobs_series'], new_data['dubizzle_jobs_entry'])
+              print('  jobs: OK full_time=' + str(new_data['dubizzle_jobs_entry'].get('full_time')))
+          else:
+              prev = last_known(history.get('dubizzle_jobs_series', []))
+              print('  jobs: MISSING - carry forward ' + (prev['date'] if prev else 'none'))
 
-// Bayut text-based
-function parseBayutCount(text) {
-  if (!text) return null;
-  const cl = text.split('\n').map(l => l.trim()).find(l => /\d+ to \d+ of [\d,]+ Propert/i.test(l));
-  if (cl) return parseInt(cl.match(/of ([\d,]+)/)?.[1]?.replace(/,/g, ''));
-  const m = text.match(/([\d,]+)\s+Propert/i);
-  return m ? parseInt(m[1].replace(/,/g, '')) : null;
-}
+          # Bayut
+          if new_data.get('bayut_entry'):
+              history['bayut_series'] = upsert(history.get('bayut_series', []), new_data['bayut_entry'])
+              print('  bayut: OK d9=' + str(new_data['bayut_entry'].get('district9_listings')))
+          else:
+              prev = last_known(history.get('bayut_series', []))
+              print('  bayut: MISSING - carry forward ' + (prev['date'] if prev else 'none'))
 
-function parseBayutD9(text) {
-  const count = parseBayutCount(text);
-  const am = text?.split('\n').map(l => l.trim()).find(l => /average sale price.*AED/i.test(l));
-  const avg = am ? parseInt(am.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g, '')) : null;
-  return count != null ? { district9_listings: count, avg_sale_price: avg } : null;
-}
+          # Luxury
+          if new_data.get('luxury_entry'):
+              history['luxury_drops_series'] = upsert(history.get('luxury_drops_series', []), new_data['luxury_entry'])
+              print('  luxury: OK drops=' + str(new_data['luxury_entry'].get('drop_count')))
+          else:
+              prev = last_known(history.get('luxury_drops_series', []))
+              print('  luxury: MISSING - carry forward ' + (prev['date'] if prev else 'none'))
 
-function parseBayutAjmanSale(text) {
-  const count = parseBayutCount(text);
-  const avgLine = text?.split('\n').map(l => l.trim()).find(l => /average sale price.*AED/i.test(l));
-  const avg = avgLine ? parseInt(avgLine.match(/AED ([\d,]+)/)?.[1]?.replace(/,/g, '')) : null;
-  return count != null ? { count, avg_sale_price: avg } : null;
-}
+          # Ajman
+          if new_data.get('ajman_entry'):
+              history['ajman_property_series'] = upsert(history.get('ajman_property_series', []), new_data['ajman_entry'])
+              print('  ajman: OK sale=' + str(new_data['ajman_entry'].get('ajman_for_sale')))
+          else:
+              prev = last_known(history.get('ajman_property_series', []))
+              print('  ajman: MISSING - carry forward ' + (prev['date'] if prev else 'none'))
 
-function parseBenchmark(title) {
-  const m = title?.match(/AED ([\d.]+)M/i);
-  return m ? { benchmark_price_aed: Math.round(parseFloat(m[1]) * 1e6) } : null;
-}
+          # Stress: 4-component using motors used_cars (component A renamed to dubizzle for back-compat)
+          motors = new_data.get('dubizzle_motors_entry') or last_known(history.get('dubizzle_motors_series', []))
+          lux = new_data.get('luxury_entry') or last_known(history.get('luxury_drops_series', []))
+          bay = new_data.get('bayut_entry') or last_known(history.get('bayut_series', []))
+          ajm = new_data.get('ajman_entry') or last_known(history.get('ajman_property_series', []))
 
-function computeStress(r) {
-  const usedCars = r.motors_usedcars?.used_cars || 38770;
-  const dubizzleScore = Math.min(25, Math.max(0, Math.round(((usedCars - 38770) / 38770) * 100 / 0.4)));
-  const drops = r.luxury?.drop_count || 1542;
-  const luxuryScore = Math.min(25, Math.round((drops - 1542) / 1542 * 100 / 2));
-  const d9 = r.bayut_d9?.district9_listings ?? 31;
-  const bayutScore = Math.min(25, Math.round((31 - d9) / 31 * 100 / 2));
-  const sale = r.bayut_ajman_sale?.count || 0;
-  const rent = r.bayut_ajman_rent || 1;
-  const ratio = (sale && rent) ? parseFloat((sale / rent).toFixed(3)) : 0;
-  const ratioScore = Math.min(25, Math.max(0, Math.round(ratio * 10 - 12)));
-  const total = dubizzleScore + luxuryScore + bayutScore + ratioScore;
-  const band = total < 30 ? 'Stable - no signal'
-    : total < 45 ? 'Mild stress building'
-    : total < 60 ? 'Clear stress building'
-    : total < 75 ? 'High stress - monitor closely'
-    : 'Crisis signal';
-  return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
-}
+          used_cars = motors.get('used_cars', 38770) if motors else 38770
+          drop_count = lux.get('drop_count', 1542) if lux else 1542
+          d9 = bay.get('district9_listings', 31) if bay else 31
+          sale = ajm.get('ajman_for_sale', 0) if ajm else 0
+          rent = ajm.get('ajman_for_rent', 1) if ajm else 1
+          ratio = round(sale / rent, 3) if rent > 0 else 0
 
-// ── Proxy configurations ──────────────────────────────────────────────────────
-// UAE proxy for ALL Dubizzle/Bayut targets (default — 23 URLs)
-let proxyUAE;
-try {
-  proxyUAE = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
-} catch (e) { console.log('UAE proxy failed: ' + e.message); }
+          dubizzle_s = min(25, max(0, round(((used_cars - 38770) / 38770) * 100 / 0.4)))
+          luxury_s = min(25, round((drop_count - 1542) / 1542 * 100 / 2))
+          bayut_s = min(25, round((31 - d9) / 31 * 100 / 2))
+          ratio_s = min(25, max(0, round(ratio * 10 - 12)))
+          total = dubizzle_s + luxury_s + bayut_s + ratio_s
 
-// US proxy ONLY for LuxuryPriceDrops (blocks UAE IPs)
-let proxyUS;
-try {
-  proxyUS = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'US' });
-} catch (e) { console.log('US proxy failed: ' + e.message); }
+          band = ('Stable - no signal' if total < 30
+              else 'Mild stress building' if total < 45
+              else 'Clear stress building' if total < 60
+              else 'High stress - monitor closely' if total < 75
+              else 'Crisis signal')
 
-// ── Shared request handler ────────────────────────────────────────────────────
-async function handleRequest({ request, page, log }) {
-  const { id, group, key } = request.userData;
-  log.info('Scraping: ' + id);
+          stress_entry = {
+              'date': today, 'total': total, 'band': band,
+              'components': {'dubizzle': dubizzle_s, 'luxury': luxury_s, 'bayut': bayut_s, 'ajman_ratio': ratio_s},
+              'carry_forward': {
+                  'dubizzle': new_data.get('dubizzle_motors_entry') is None,
+                  'luxury':   new_data.get('luxury_entry') is None,
+                  'bayut':    new_data.get('bayut_entry') is None,
+                  'ajman':    new_data.get('ajman_entry') is None,
+              }
+          }
 
-  try { await page.waitForLoadState('networkidle', { timeout: 30000 }); }
-  catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
+          history['stress_series'] = upsert(history.get('stress_series', []), stress_entry)
+          history['last_updated'] = new_data['scraped_at']
+          history['latest_stress'] = stress_entry
+          history['collection_errors'] = new_data.get('errors', [])
 
-  const title = await page.title();
-  const bodyLen = await page.evaluate(() => document.body?.innerText?.length || 0);
-  log.info(id + ': title="' + title.substring(0, 70) + '" bodyLen=' + bodyLen);
+          with open('/tmp/uae_history_updated.json', 'w') as f:
+              json.dump(history, f, indent=2)
 
-  if (bodyLen < 200) throw new Error('Empty body on ' + id);
+          cf = [k for k, v in stress_entry['carry_forward'].items() if v]
+          print('\n=== STRESS: ' + str(total) + '/100 - ' + band + ' ===')
+          print('  A used_cars=' + str(used_cars) + ' score=' + str(dubizzle_s))
+          print('  B drops=' + str(drop_count) + ' score=' + str(luxury_s))
+          print('  C d9=' + str(d9) + ' score=' + str(bayut_s))
+          print('  D ratio=' + str(ratio) + ' score=' + str(ratio_s))
+          if cf: print('  * Carried forward: ' + str(cf))
+          PYEOF
 
-  let parsed = null;
+      - name: Push updated history to Gist
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          CONTENT=$(python3 -c "
+          import json
+          with open('/tmp/uae_history_updated.json') as f:
+              data = f.read()
+          print(json.dumps(data))
+          ")
+          RESPONSE=$(curl -s -X PATCH \
+            "https://api.github.com/gists/6864f9c206558d36b9777b00f3758087" \
+            -H "Authorization: Bearer ${{ secrets.GIST_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"files\": {\"uae_history.json\": {\"content\": $CONTENT}}}")
+          echo "$RESPONSE" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          print('Gist: ' + str(d.get('html_url','ERROR')) + ' | ' + str(d.get('updated_at','?')))
+          "
 
-  // Property for-sale / for-rent (per-emirate)
-  if (group === 'prop_sale') {
-    parsed = await parsePropertyCount(page);
-    if (!parsed) throw new Error(id + ' parse failed');
-    results.property_sale[key] = parsed;
-    log.info('OK ' + id + ': ' + key + '=' + parsed);
-    await page.close();
-    return;
-  }
-  if (group === 'prop_rent') {
-    parsed = await parsePropertyCount(page);
-    if (!parsed) throw new Error(id + ' parse failed');
-    results.property_rent[key] = parsed;
-    log.info('OK ' + id + ': ' + key + '=' + parsed);
-    await page.close();
-    return;
-  }
-
-  // Other targets
-  switch (id) {
-    case 'jobs':
-      parsed = await parseJobs(page, log);
-      if (!parsed) throw new Error('jobs parse failed - fullTime=null');
-      results.jobs_fulltime = parsed;
-      break;
-    case 'motors':
-      parsed = await parseMotors(page, log);
-      if (!parsed) throw new Error('motors parse failed');
-      results.motors_usedcars = parsed;
-      break;
-    case 'luxury':
-      parsed = await parseLuxury(page);
-      if (!parsed) throw new Error('luxury parse failed');
-      results.luxury = parsed;
-      break;
-    case 'bayut_d9': {
-      const text = await page.evaluate(() => document.body?.innerText || '');
-      parsed = parseBayutD9(text);
-      if (!parsed) throw new Error('bayut_d9 parse failed');
-      results.bayut_d9 = parsed;
-      break;
-    }
-    case 'bayut_ajman_sale': {
-      const text = await page.evaluate(() => document.body?.innerText || '');
-      parsed = parseBayutAjmanSale(text);
-      if (!parsed) throw new Error('bayut_ajman_sale parse failed');
-      results.bayut_ajman_sale = parsed;
-      break;
-    }
-    case 'bayut_ajman_rent': {
-      const text = await page.evaluate(() => document.body?.innerText || '');
-      parsed = parseBayutCount(text);
-      if (!parsed) throw new Error('bayut_ajman_rent parse failed');
-      results.bayut_ajman_rent = parsed;
-      break;
-    }
-    case 'benchmark':
-      parsed = parseBenchmark(title);
-      if (!parsed) throw new Error('benchmark parse failed');
-      results.benchmark = parsed;
-      break;
-  }
-  log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 120));
-  await page.close();
-}
-
-function failedHandler({ request, error }) {
-  console.error('FAILED ' + request.userData.id + ': ' + error.message);
-  results.errors.push({ source: request.userData.id, error: error.message });
-}
-
-// ── Crawler 1: UAE proxy (Dubizzle + Bayut, 23 URLs) ─────────────────────────
-const uaeCrawler = new PlaywrightCrawler({
-  proxyConfiguration: proxyUAE,
-  maxRequestRetries: 2,
-  navigationTimeoutSecs: 90,
-  requestHandlerTimeoutSecs: 120,
-  maxConcurrency: 1,
-  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
-  requestHandler: handleRequest,
-  failedRequestHandler: failedHandler
-});
-
-// ── Crawler 2: US proxy (LuxuryPriceDrops only) ──────────────────────────────
-const usCrawler = new PlaywrightCrawler({
-  proxyConfiguration: proxyUS,
-  maxRequestRetries: 2,
-  navigationTimeoutSecs: 90,
-  requestHandlerTimeoutSecs: 120,
-  maxConcurrency: 1,
-  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
-  requestHandler: handleRequest,
-  failedRequestHandler: failedHandler
-});
-
-// Build UAE-proxy targets: jobs, motors, bayut, all per-city property
-const uaeTargets = [
-  ...SINGLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })),
-  ...PROP_SALE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'prop_sale', key: t.key } })),
-  ...PROP_RENT_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'prop_rent', key: t.key } }))
-];
-
-await uaeCrawler.run(uaeTargets);
-await usCrawler.run(LUXURY_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
-
-const stress = computeStress(results);
-const bayutSaleCount = results.bayut_ajman_sale?.count || null;
-const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
-
-const propertySaleEntry = Object.keys(results.property_sale).length > 0
-  ? { date: TODAY, ...results.property_sale }
-  : null;
-const propertyRentEntry = Object.keys(results.property_rent).length > 0
-  ? { date: TODAY, ...results.property_rent }
-  : null;
-
-const output = {
-  date: TODAY, scraped_at: SCRAPED_AT,
-  stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
-  dubizzle_jobs_entry:          results.jobs_fulltime   ? { date: TODAY, ...results.jobs_fulltime }   : null,
-  dubizzle_motors_entry:        results.motors_usedcars ? { date: TODAY, ...results.motors_usedcars } : null,
-  dubizzle_property_sale_entry: propertySaleEntry,
-  dubizzle_property_rent_entry: propertyRentEntry,
-  luxury_entry:                 results.luxury          ? { date: TODAY, ...results.luxury }           : null,
-  bayut_entry: results.bayut_d9 ? {
-    date: TODAY,
-    district9_listings: results.bayut_d9.district9_listings,
-    d9_avg_price: results.bayut_d9.avg_sale_price,
-    benchmark_price_aed: results.benchmark?.benchmark_price_aed ?? 3200000,
-    benchmark_flag: 'NO CHANGE'
-  } : null,
-  ajman_entry: (bayutSaleCount && results.bayut_ajman_rent) ? {
-    date: TODAY, scraped_at: SCRAPED_AT,
-    ajman_for_sale: bayutSaleCount,
-    ajman_for_sale_avg_price: bayutSaleAvg,
-    ajman_for_rent: results.bayut_ajman_rent,
-    ratio: stress.ratio
-  } : null,
-  errors: results.errors,
-  success: results.errors.length === 0
-};
-
-console.log('=== FINAL OUTPUT ===');
-console.log(JSON.stringify(output, null, 2));
-await Actor.pushData(output);
-await Actor.setValue('OUTPUT', output);
-await Actor.exit();
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f /tmp/apify_output.json ]; then
+            python3 -c "
+          import json
+          with open('/tmp/apify_output.json') as f: d = json.load(f)
+          errs = d.get('errors', [])
+          print('Errors: ' + str([e['source'] for e in errs] if errs else 'none'))
+          s = d.get('stress', {})
+          print('Stress: ' + str(s.get('total')) + '/100 - ' + str(s.get('band')))
+          motors = d.get('dubizzle_motors_entry') or {}
+          jobs = d.get('dubizzle_jobs_entry') or {}
+          ps = d.get('dubizzle_property_sale_entry') or {}
+          pr = d.get('dubizzle_property_rent_entry') or {}
+          print('Used cars=' + str(motors.get('used_cars','?')))
+          print('Jobs full_time=' + str(jobs.get('full_time','?')))
+          print('Sale UAE=' + str(ps.get('uae','?')) + ' Dubai=' + str(ps.get('dubai','?')) + ' Ajman=' + str(ps.get('ajman','?')))
+          print('Rent UAE=' + str(pr.get('uae','?')) + ' Dubai=' + str(pr.get('dubai','?')) + ' Ajman=' + str(pr.get('ajman','?')))
+          "
+          fi
