@@ -6,18 +6,21 @@
 <title>UAE Market Monitor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
-:root{--bg:#0f0f0f;--surface:#181818;--surface2:#222222;--border:rgba(255,255,255,0.08);--text:#e8e8e4;--muted:#888780;--green:#1D9E75;--blue:#378ADD;--amber:#EF9F27;--red:#E24B4A;--teal:#5DCAA5;--coral:#D85A30;--purple:#7F77DD;--radius:10px;--radius-sm:6px;}
+:root{--bg:#0f0f0f;--surface:#181818;--surface2:#222222;--border:rgba(255,255,255,0.08);--text:#e8e8e4;--muted:#888780;--green:#1D9E75;--blue:#378ADD;--amber:#EF9F27;--red:#E24B4A;--teal:#5DCAA5;--coral:#D85A30;--purple:#7F77DD;--orange:#F5793A;--gray:#888780;--radius:10px;--radius-sm:6px;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5;padding:20px;}
 .dash{display:flex;flex-direction:column;gap:14px;max-width:1400px;margin:0 auto;}
 .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
 .card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
 .mc{background:var(--surface2);border-radius:var(--radius-sm);padding:12px 14px;}
 .mc .lbl{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
 .mc .val{font-size:22px;font-weight:600;line-height:1.1;}
 .mc .sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.mc-sm{padding:9px 11px;}
+.mc-sm .val{font-size:16px;}
 .st{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;}
 .pill{display:inline-block;font-size:10px;font-weight:600;padding:3px 9px;border-radius:99px;letter-spacing:.03em;white-space:nowrap;}
 .p-ok{background:rgba(29,158,117,.18);color:#5DCAA5;border:0.5px solid rgba(29,158,117,.3);}
@@ -45,49 +48,156 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .status-bar{font-size:10px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;padding-top:10px;border-top:0.5px solid var(--border);}
 .warn-box{background:rgba(239,159,39,.08);border:0.5px solid rgba(239,159,39,.2);border-radius:var(--radius-sm);padding:10px 14px;font-size:11px;color:#FAC775;margin-bottom:4px;}
 .section-divider{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 0;border-bottom:0.5px solid var(--border);}
-@media(max-width:700px){.grid2,.grid3,.grid4{grid-template-columns:1fr;}body{padding:12px;}}
-</style></head><body>
+@media(max-width:900px){.grid5{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:700px){.grid2,.grid3,.grid4,.grid5{grid-template-columns:1fr;}body{padding:12px;}}
+</style>
+</head>
+<body>
 <div class="dash" id="dash">
-<div class="header"><div><h1>🇦🇪 UAE Market Monitor</h1><div style="font-size:11px;color:var(--muted);margin-top:2px;" id="hdr-sub"><span class="pulse"></span>Loading…</div></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span id="stress-pill" class="pill p-gray">— / 100</span><div style="text-align:right;"><div style="font-size:11px;color:var(--muted);"><span class="pulse"></span>Auto-refreshes every 10 min</div><div style="font-size:10px;color:var(--muted);" id="next-tick">—</div></div></div></div>
-<div id="warn-area"></div>
-<div class="warn-box">📅 <strong>Reminder — May 2026:</strong> Al Zorah penalty: ~3,000 AED/day compounding.</div>
-<div class="section-divider">Stress Index</div>
-<div class="grid2">
-<div class="card gauge-wrap" style="justify-content:center;gap:8px;">
-<svg width="220" height="120" viewBox="0 0 220 120"><path d="M22,108 A88,88 0 0,1 110,20" fill="none" stroke="#1D9E75" stroke-width="14" stroke-linecap="butt" opacity=".3"/><path d="M110,20 A88,88 0 0,1 178,68" fill="none" stroke="#EF9F27" stroke-width="14" stroke-linecap="butt" opacity=".3"/><path d="M178,68 A88,88 0 0,1 198,108" fill="none" stroke="#E24B4A" stroke-width="14" stroke-linecap="butt" opacity=".3"/><path id="gauge-arc" d="" fill="none" stroke-width="14" stroke-linecap="round"/><line id="gauge-needle" x1="110" y1="108" x2="35" y2="40" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/><circle cx="110" cy="108" r="5" fill="var(--text)"/><text x="10" y="116" font-size="10" fill="#888780">0</text><text x="98" y="13" font-size="10" fill="#888780">50</text><text x="196" y="116" font-size="10" fill="#888780">100</text></svg>
-<div class="gauge-num" id="gauge-num">—</div><div style="font-size:11px;color:var(--muted);">stress index · out of 100</div>
-<div style="width:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px;"><div class="mode-badge"><span style="color:var(--muted);">HYTE</span><span id="hyte-pill" class="pill p-blue">—</span></div><div class="mode-badge"><span style="color:var(--muted);">Al Zorah</span><span id="alz-pill" class="pill p-ok">—</span></div></div></div>
-<div class="card"><div class="st">Stress sub-scores</div><div id="subscores"></div></div></div>
-<div class="card"><div class="st">Stress index — daily trend</div><div class="cw" style="height:150px;"><canvas id="stressChart"></canvas></div><div class="src">Bands: 0–29 Stable · 30–44 Mild · 45–59 Clear · 60–74 High · 75–100 Crisis</div></div>
-<div class="section-divider">Dubizzle Classifieds — Consumer Goods Pressure</div>
-<div class="card"><div class="st">Dubizzle UAE — listing count trend</div><div class="leg" id="dub-leg"></div><div class="cw" style="height:200px;"><canvas id="dubChart"></canvas></div><div class="src" id="dub-note">Source: uae.dubizzle.com/classified/</div></div>
-<div class="section-divider">Dubizzle Motors — Asset Liquidation Signal</div>
-<div class="card"><div class="st">Dubizzle Motors — UAE listings <span class="pill p-blue">Used Cars · Plates · Rentals</span></div><div class="grid3" id="motors-metrics" style="margin-bottom:12px;"></div><div class="cw" style="height:160px;"><canvas id="motorsChart"></canvas></div><div class="src">Source: uae.dubizzle.com/motors/ · Rising = asset liquidation signal</div></div>
-<div class="section-divider">Dubizzle Property — Supply Pressure</div>
-<div class="grid2">
-<div class="card"><div class="st">Property for-sale — UAE total daily</div><div class="cw" style="height:160px;"><canvas id="propSaleChart"></canvas></div><div class="src">Source: uae.dubizzle.com/en/property-for-sale/residential/</div></div>
-<div class="card"><div class="st">Property for-rent — by emirate</div><div class="grid4" id="rent-emirate-metrics" style="margin-bottom:10px;"></div><div class="cw" style="height:110px;"><canvas id="propRentChart"></canvas></div><div class="src">Source: uae.dubizzle.com/en/property-for-rent/residential/</div></div>
+
+<div class="header">
+  <div>
+    <h1>🇦🇪 UAE Market Monitor</h1>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px;" id="hdr-sub"><span class="pulse"></span>Loading…</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span id="stress-pill" class="pill p-gray">— / 100</span>
+    <div style="text-align:right;">
+      <div style="font-size:11px;color:var(--muted);"><span class="pulse"></span>Auto-refreshes every 10 min</div>
+      <div style="font-size:10px;color:var(--muted);" id="next-tick">—</div>
+    </div>
+  </div>
 </div>
+
+<div id="warn-area"></div>
+<div class="warn-box">📅 <strong>Reminder — May 2026:</strong> Al Zorah penalty clock: ~3,000 AED/day compounding.</div>
+
+<div class="section-divider">Stress Index</div>
+
+<div class="grid2">
+  <div class="card gauge-wrap" style="justify-content:center;gap:8px;">
+    <svg width="220" height="120" viewBox="0 0 220 120">
+      <path d="M22,108 A88,88 0 0,1 110,20" fill="none" stroke="#1D9E75" stroke-width="14" stroke-linecap="butt" opacity=".3"/>
+      <path d="M110,20 A88,88 0 0,1 178,68" fill="none" stroke="#EF9F27" stroke-width="14" stroke-linecap="butt" opacity=".3"/>
+      <path d="M178,68 A88,88 0 0,1 198,108" fill="none" stroke="#E24B4A" stroke-width="14" stroke-linecap="butt" opacity=".3"/>
+      <path id="gauge-arc" d="" fill="none" stroke-width="14" stroke-linecap="round"/>
+      <line id="gauge-needle" x1="110" y1="108" x2="35" y2="40" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="110" cy="108" r="5" fill="var(--text)"/>
+      <text x="10" y="116" font-size="10" fill="#888780">0</text>
+      <text x="98" y="13" font-size="10" fill="#888780">50</text>
+      <text x="196" y="116" font-size="10" fill="#888780">100</text>
+    </svg>
+    <div class="gauge-num" id="gauge-num">—</div>
+    <div style="font-size:11px;color:var(--muted);">stress index · out of 100</div>
+    <div style="width:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+      <div class="mode-badge"><span style="color:var(--muted);">HYTE</span><span id="hyte-pill" class="pill p-blue">—</span></div>
+      <div class="mode-badge"><span style="color:var(--muted);">Al Zorah</span><span id="alz-pill" class="pill p-ok">—</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="st">Stress sub-scores</div>
+    <div id="subscores"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="st">Stress index — daily trend</div>
+  <div class="cw" style="height:150px;"><canvas id="stressChart"></canvas></div>
+  <div class="src">Bands: 0–29 Stable · 30–44 Mild · 45–59 Clear · 60–74 High · 75–100 Crisis</div>
+</div>
+
+<div class="section-divider">Used Cars — Asset Liquidation Signal</div>
+<div class="card">
+  <div class="st">Dubizzle Used Cars UAE — daily listing count <span class="pill p-blue" id="usedcars-pill">—</span></div>
+  <div class="cw" style="height:160px;"><canvas id="usedCarsChart"></canvas></div>
+  <div class="src">Source: uae.dubizzle.com/motors/ · Rising = consumer asset liquidation signal</div>
+</div>
+
+<div class="section-divider">Property For-Sale — UAE Supply Pressure</div>
+<div class="card">
+  <div class="st">Dubizzle Property for-sale by emirate <span class="pill p-blue" id="propsale-pill">—</span></div>
+  <div class="grid5" id="propsale-metrics" style="margin-bottom:14px;"></div>
+  <div class="leg" id="propsale-leg"></div>
+  <div class="cw" style="height:200px;"><canvas id="propSaleChart"></canvas></div>
+  <div class="src">Source: per-emirate /property-for-sale/residential/ · Rising = supply pressure / soft demand</div>
+</div>
+
+<div class="section-divider">Property For-Rent — UAE Supply Pressure</div>
+<div class="card">
+  <div class="st">Dubizzle Property for-rent by emirate <span class="pill p-blue" id="proprent-pill">—</span></div>
+  <div class="grid5" id="proprent-metrics" style="margin-bottom:14px;"></div>
+  <div class="leg" id="proprent-leg"></div>
+  <div class="cw" style="height:200px;"><canvas id="propRentChart"></canvas></div>
+  <div class="src">Source: per-emirate /property-for-rent/residential/ · Ajman rent trend = Al Zorah exit signal</div>
+</div>
+
 <div class="section-divider">Dubizzle Jobs — Economic Health Counter-Indicator</div>
-<div class="card"><div class="st">Dubizzle Jobs UAE — total listings <span class="pill p-ok" id="jobs-direction-pill">—</span></div><div class="grid4" id="jobs-metrics" style="margin-bottom:12px;"></div><div class="cw" style="height:150px;"><canvas id="jobsChart"></canvas></div><div class="src">Source: uae.dubizzle.com/jobs/search/?q= · Baseline May 6 2026: 1,310</div></div>
+<div class="card">
+  <div class="st">Dubizzle Jobs UAE — full-time listings <span class="pill p-ok" id="jobs-direction-pill">—</span></div>
+  <div class="grid3" id="jobs-metrics" style="margin-bottom:12px;"></div>
+  <div class="cw" style="height:150px;"><canvas id="jobsChart"></canvas></div>
+  <div class="src">Source: uae.dubizzle.com/jobs/ · Rising = economy expanding</div>
+</div>
+
 <div class="section-divider">Luxury Price Drops — HNW Distress</div>
-<div class="card"><div class="st">Luxury Price Drops — Dubai <span id="lux-d-pill" class="pill p-gray">B score —/25</span></div><div class="grid4" id="lux-metrics"></div><div class="cw" style="height:150px;margin-top:12px;"><canvas id="luxChart"></canvas></div><div class="src">Source: luxurypricedrops.com/dubai/ · Baseline Apr 5 2026: 1,542</div></div>
+<div class="card">
+  <div class="st">Luxury Price Drops — Dubai <span id="lux-d-pill" class="pill p-gray">B score —/25</span></div>
+  <div class="grid4" id="lux-metrics"></div>
+  <div class="cw" style="height:150px;margin-top:12px;"><canvas id="luxChart"></canvas></div>
+  <div class="src">Source: luxurypricedrops.com/dubai/ · Baseline Apr 5 2026: 1,542</div>
+</div>
+
 <div class="section-divider">Bayut — Al Zorah District 9 &amp; Ajman Market</div>
 <div class="grid2">
-<div class="card"><div class="st">District 9, Al Zorah — listed properties</div><div class="cw" style="height:170px;"><canvas id="d9Chart"></canvas></div><div class="src" id="d9-note">Source: bayut.com/for-sale/property/ajman/al-zorah/district-9/</div></div>
-<div class="card"><div class="st">Benchmark — Villa D9 (AED M)</div><div style="background:var(--surface2);border-radius:var(--radius-sm);padding:7px 11px;margin-bottom:8px;font-size:11px;color:var(--muted);">Semi-Detached Villa · Corner Type D · District 9</div><div class="cw" style="height:135px;"><canvas id="benchChart"></canvas></div><div class="src" id="bench-note"></div></div>
+  <div class="card">
+    <div class="st">District 9, Al Zorah — listed properties</div>
+    <div class="cw" style="height:170px;"><canvas id="d9Chart"></canvas></div>
+    <div class="src" id="d9-note">Source: bayut.com/for-sale/property/ajman/al-zorah/district-9/</div>
+  </div>
+  <div class="card">
+    <div class="st">Benchmark — Villa D9 (AED M)</div>
+    <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:7px 11px;margin-bottom:8px;font-size:11px;color:var(--muted);">Semi-Detached Villa · Corner Type D · District 9</div>
+    <div class="cw" style="height:135px;"><canvas id="benchChart"></canvas></div>
+    <div class="src" id="bench-note"></div>
+  </div>
 </div>
-<div class="card"><div class="st">Ajman Property Market <span id="ajman-ratio-pill" class="pill p-gray">Sale:Rent —</span></div><div class="grid4" id="ajman-metrics" style="margin-bottom:12px;"></div><div class="grid2"><div><div style="font-size:10px;color:var(--muted);margin-bottom:6px;">FOR SALE TREND</div><div class="cw" style="height:150px;"><canvas id="ajmanSaleChart"></canvas></div></div><div><div style="font-size:10px;color:var(--muted);margin-bottom:6px;">FOR RENT TREND</div><div class="cw" style="height:150px;"><canvas id="ajmanRentChart"></canvas></div></div></div><div class="src" style="margin-top:8px;">Source: bayut.com/for-sale/property/ajman/ · bayut.com/to-rent/property/ajman/</div></div>
-<div class="card"><div class="st">Ajman Sale-to-Rent Ratio — day by day</div><div class="cw" style="height:150px;"><canvas id="ratioChart"></canvas></div><div class="src">Ratio = for-sale ÷ for-rent · Watch >2.0 · Alert >2.5</div></div>
-<div class="status-bar"><span id="last-updated">Data: —</span><span>gist.github.com/imaginationking2/6864f9c206558d36b9777b00f3758087</span></div>
+
+<div class="card">
+  <div class="st">Ajman Property Market — Bayut supply pressure <span id="ajman-ratio-pill" class="pill p-gray">Sale:Rent —</span></div>
+  <div class="grid4" id="ajman-metrics" style="margin-bottom:12px;"></div>
+  <div class="grid2">
+    <div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">For Sale trend</div>
+      <div class="cw" style="height:150px;"><canvas id="ajmanSaleChart"></canvas></div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">For Rent trend</div>
+      <div class="cw" style="height:150px;"><canvas id="ajmanRentChart"></canvas></div>
+    </div>
+  </div>
+  <div class="src" style="margin-top:8px;">Source: bayut.com/for-sale/property/ajman/ · bayut.com/to-rent/property/ajman/</div>
 </div>
+
+<div class="card">
+  <div class="st">Ajman Sale-to-Rent Ratio — day by day</div>
+  <div class="cw" style="height:150px;"><canvas id="ratioChart"></canvas></div>
+  <div class="src">Ratio = for-sale ÷ for-rent · Watch >2.0 · Alert >2.5</div>
+</div>
+
+<div class="status-bar">
+  <span id="last-updated">Data: —</span>
+  <span>gist.github.com/imaginationking2/6864f9c206558d36b9777b00f3758087 · auto-updates every 10 min</span>
+</div>
+
+</div>
+
 <script>
 const GIST='https://gist.githubusercontent.com/imaginationking2/6864f9c206558d36b9777b00f3758087/raw';
 const REFRESH_MS=10*60*1000;
-const C={green:'#1D9E75',blue:'#378ADD',amber:'#EF9F27',red:'#E24B4A',teal:'#5DCAA5',coral:'#D85A30',purple:'#7F77DD',gray:'#888780',grid:'rgba(255,255,255,0.06)',tick:'#888780'};
-const DUB_KEYS=['furniture_home','home_appliances','sports','mobiles_tablets','electronics','computers'];
-const DUB_LABELS=['Furniture & Home','Home Appliances','Sports','Mobiles & Tablets','Electronics','Computers'];
-const DUB_COLORS=[C.green,C.blue,C.amber,C.coral,C.purple,C.gray];
+const C={green:'#1D9E75',blue:'#378ADD',amber:'#EF9F27',red:'#E24B4A',teal:'#5DCAA5',coral:'#D85A30',purple:'#7F77DD',orange:'#F5793A',gray:'#888780',grid:'rgba(255,255,255,0.06)',tick:'#888780'};
+const EMIRATE_KEYS=['uae','dubai','abu_dhabi','sharjah','ajman','rak','fujairah','uaq','alain'];
+const EMIRATE_NAMES={uae:'UAE Total',dubai:'Dubai',abu_dhabi:'Abu Dhabi',sharjah:'Sharjah',ajman:'Ajman',rak:'RAK',fujairah:'Fujairah',uaq:'UAQ',alain:'Al Ain'};
+const EMIRATE_COLORS={uae:C.green,dubai:C.blue,abu_dhabi:C.amber,sharjah:C.purple,ajman:C.coral,rak:C.teal,fujairah:C.orange,uaq:C.red,alain:C.gray};
 let charts={};
 const $=id=>document.getElementById(id);
 const fmt=n=>n!=null?Number(n).toLocaleString():'—';
@@ -97,25 +207,224 @@ function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart
 function emptyChart(id){if(charts[id])charts[id].destroy();charts[id]=new Chart($(id),{type:'line',data:{labels:['No data yet — runs nightly at midnight UAE time'],datasets:[{data:[null],borderColor:C.gray,borderWidth:1,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}},y:{grid:{color:C.grid},ticks:{color:C.tick,font:{size:10}}}}}});}
 function pillCls(b){return !b||b.includes('Stable')||b.includes('Mild')?'p-ok':b.includes('Clear')?'p-warn':'p-red';}
 function hyteMode(s){return s<55?'Hold / markup':s<70?'Controlled clearance':s<80?'Aggressive clearance':'Exit / cash convert';}
-function alzMode(s){return s<50?'Hold fully':s<65?'Improve selectively then sell':s<75?'Partial exit':'Urgent sale';}
-function updateGauge(score){const cx=110,cy=108,r=88,startA=218,sweep=284;const polar=d=>{const rad=(d-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)};};const endDeg=startA+(score/100)*sweep;const s=polar(startA),e=polar(endDeg),large=((score/100)*sweep)>180?1:0;$('gauge-arc').setAttribute('d','M '+s.x+','+s.y+' A '+r+','+r+' 0 '+large+',1 '+e.x+','+e.y);const nRad=(endDeg-90)*Math.PI/180;$('gauge-needle').setAttribute('x2',(cx+(r-14)*Math.cos(nRad)).toFixed(1));$('gauge-needle').setAttribute('y2',(cy+(r-14)*Math.sin(nRad)).toFixed(1));const col=score>=65?C.red:score>=45?C.amber:C.green;$('gauge-arc').setAttribute('stroke',col);$('gauge-num').textContent=score;$('gauge-num').style.color=col;}
-function renderSubscores(stress){const names={dubizzle:'A — Dubizzle',luxury:'B — Luxury drops',bayut:'C — Bayut/D9',ajman_ratio:'D — Ajman ratio'};$('subscores').innerHTML=['dubizzle','luxury','bayut','ajman_ratio'].map(k=>{const s=stress.components?.[k]??0,pct=s/25,col=pct>=0.8?C.red:pct>=0.5?C.amber:C.green,cf=stress.carry_forward?.[k==='ajman_ratio'?'ajman':k];return '<div class="bar-row"><div class="bar-lbl">'+names[k]+(cf?' <span style="font-size:9px;color:var(--muted);">*cf</span>':'')+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(pct*100)+'%;background:'+col+';"></div></div><div class="bar-val" style="color:'+col+';">'+s+'/25</div></div>';}).join('');}
-function renderStressChart(series){if(!series||!series.length){emptyChart('stressChart');return;}const colors=series.map(e=>e.total>=60?C.red:e.total>=45?C.amber:C.green);mkChart('stressChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Stress',data:series.map(e=>e.total??null),borderColor:C.purple,backgroundColor:C.purple+'18',borderWidth:2.5,pointRadius:4,pointBackgroundColor:colors,fill:true,tension:0.35,spanGaps:true},{label:'High(60)',data:series.map(()=>60),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},{label:'Clear(45)',data:series.map(()=>45),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:0,max:100}}}});}
-function renderDubChart(series){const leg=$('dub-leg');leg.innerHTML='';DUB_LABELS.forEach((l,i)=>{const d=document.createElement('div');d.className='li';d.innerHTML='<span class="ld" style="background:'+DUB_COLORS[i]+';"></span>'+l;leg.appendChild(d);});if(!series||!series.length){emptyChart('dubChart');return;}mkChart('dubChart',{type:'line',data:{labels:series.map(fmtDate),datasets:DUB_KEYS.map((k,i)=>({label:DUB_LABELS[i],data:series.map(e=>e[k]??null),borderColor:DUB_COLORS[i],borderWidth:2,pointRadius:series.length===1?5:3,tension:0.35,fill:false,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});const last=series[series.length-1];if(last)$('dub-note').textContent='Latest ('+last.date+'): Furniture '+fmt(last.furniture_home)+' · Appliances '+fmt(last.home_appliances);}
-function renderMotors(series){const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;if(!last){$('motors-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;">No motors data yet.</div>';emptyChart('motorsChart');return;}const chg=k=>{if(!prev||!last[k])return'';const d=last[k]-prev[k];return(d>=0?'+':'')+d.toLocaleString();};$('motors-metrics').innerHTML=[{lbl:'Used Cars',key:'used_cars',color:C.amber},{lbl:'Number Plates',key:'number_plates',color:C.coral},{lbl:'Rental Cars',key:'rental_cars',color:C.blue},{lbl:'Motorcycles',key:'motorcycles',color:C.purple},{lbl:'Auto Accessories',key:'auto_accessories',color:C.gray},{lbl:'Heavy Vehicles',key:'heavy_vehicles',color:C.teal}].map(({lbl,key,color})=>'<div class="mc"><div class="lbl">'+lbl+'</div><div class="val" style="color:'+color+';">'+fmt(last[key])+'</div><div class="sub">'+(chg(key)||'baseline')+'</div></div>').join('');if(series.length<2){emptyChart('motorsChart');return;}mkChart('motorsChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Used Cars',data:series.map(e=>e.used_cars??null),borderColor:C.amber,borderWidth:2,pointRadius:3,tension:0.35,fill:false,spanGaps:true},{label:'Plates',data:series.map(e=>e.number_plates??null),borderColor:C.coral,borderWidth:2,pointRadius:3,tension:0.35,fill:false,spanGaps:true},{label:'Rentals',data:series.map(e=>e.rental_cars??null),borderColor:C.blue,borderWidth:2,pointRadius:3,tension:0.35,fill:false,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});}
-function renderPropertySale(series){if(!series||!series.length){emptyChart('propSaleChart');return;}mkChart('propSaleChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'UAE total',data:series.map(e=>e.total_uae??null),borderColor:C.green,backgroundColor:C.green+'18',borderWidth:2,pointRadius:3,tension:0.35,fill:true,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc(v=>(v/1000).toFixed(0)+'k')}});}
-function renderPropertyRent(series){const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;const emNames={dubai:'Dubai',ajman:'Ajman',sharjah:'Sharjah',abu_dhabi:'Abu Dhabi'};if(!last){$('rent-emirate-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;">No data yet.</div>';emptyChart('propRentChart');return;}$('rent-emirate-metrics').innerHTML=Object.entries(emNames).map(([k,name])=>{const v=last[k],p=prev?.[k],chg=p&&v?((v-p)/p*100).toFixed(1):null,col=k==='ajman'?C.coral:C.blue;return '<div class="mc"><div class="lbl">'+name+'</div><div class="val" style="color:'+col+';">'+fmt(v)+'</div><div class="sub">'+(chg!==null?(Number(chg)>=0?'+':'')+chg+'%':'baseline')+'</div></div>';}).join('');if(series.length<2){emptyChart('propRentChart');return;}mkChart('propRentChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Ajman',data:series.map(e=>e.ajman??null),borderColor:C.coral,borderWidth:2.5,pointRadius:3,tension:0.35,fill:false,spanGaps:true},{label:'Dubai',data:series.map(e=>e.dubai??null),borderColor:C.blue,borderWidth:1.5,pointRadius:2,tension:0.35,fill:false,spanGaps:true},{label:'Sharjah',data:series.map(e=>e.sharjah??null),borderColor:C.purple,borderWidth:1.5,pointRadius:2,tension:0.35,fill:false,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>(v/1000).toFixed(0)+'k')}});}
-function renderJobs(series){const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null,BASELINE=1310;if(!last){$('jobs-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;">No jobs data yet — baseline: 1,310</div>';emptyChart('jobsChart');return;}const total=last.total_jobs||0,prevTotal=prev?.total_jobs||BASELINE,chg=total-prevTotal,trend=total>BASELINE?'▲ Above baseline':total<BASELINE?'▼ Below baseline':'At baseline',trendCol=total>BASELINE?C.green:total<BASELINE*0.9?C.red:C.amber,cats=last.categories||{};$('jobs-metrics').innerHTML=[{lbl:'Total Jobs UAE',val:fmt(total),sub:(chg>=0?'+':'')+chg+' vs prev',col:trendCol},{lbl:'Real Estate',val:fmt(cats.real_estate),sub:'property sector',col:C.coral},{lbl:'Sales & Biz Dev',val:fmt(cats.sales_business_dev),sub:'leading indicator',col:C.blue},{lbl:'Engineering',val:fmt(cats.engineering),sub:'construction proxy',col:C.purple}].map(({lbl,val,sub,col})=>'<div class="mc"><div class="lbl">'+lbl+'</div><div class="val" style="color:'+col+';">'+(val||'—')+'</div><div class="sub">'+sub+'</div></div>').join('');const pill=$('jobs-direction-pill');pill.textContent=trend;pill.className='pill '+(total>BASELINE?'p-ok':total<BASELINE*0.9?'p-red':'p-warn');if(series.length<2){emptyChart('jobsChart');return;}mkChart('jobsChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Total jobs',data:series.map(e=>e.total_jobs??null),borderColor:C.green,backgroundColor:C.green+'18',borderWidth:2.5,pointRadius:4,fill:true,tension:0.35,spanGaps:true},{label:'Baseline(1310)',data:series.map(()=>BASELINE),borderColor:C.gray,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>v.toLocaleString())}});}
-function renderLuxury(lastLux,dScr){if(!lastLux){$('lux-metrics').innerHTML='<div style="color:var(--muted);font-size:11px;grid-column:1/-1;">No luxury data.</div>';emptyChart('luxChart');return;}const dc=lastLux.drop_count||0,avg=lastLux.avg_drop_pct||0,maxD=lastLux.max_drop_pct||avg;$('lux-metrics').innerHTML='<div class="mc"><div class="lbl">Drop count</div><div class="val" style="color:'+C.red+';">'+fmt(dc)+'</div><div class="sub">detected</div></div><div class="mc"><div class="lbl">Avg drop</div><div class="val" style="color:'+C.red+';">'+avg+'%</div><div class="sub">all drops</div></div><div class="mc"><div class="lbl">Max drop</div><div class="val" style="color:'+C.red+';">'+maxD+'%</div><div class="sub">single listing</div></div><div class="mc"><div class="lbl">Score</div><div class="val" style="color:'+(dScr>=20?C.red:dScr>=14?C.amber:C.green)+';">'+dScr+'/25</div><div class="sub">B component</div></div>';const dp=$('lux-d-pill');dp.textContent='B: '+dScr+'/25';dp.className='pill '+(dScr>=20?'p-red':dScr>=14?'p-warn':'p-ok');}
-function renderLuxChart(series){if(!series||!series.length){emptyChart('luxChart');return;}mkChart('luxChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Drop count',data:series.map(e=>e.drop_count??null),borderColor:C.red,backgroundColor:C.red+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true},{label:'Elevated(1500)',data:series.map(()=>1500),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},{label:'Max(2500)',data:series.map(()=>2500),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>v.toLocaleString(),min:0,suggestedMax:3000}}}});}
-function renderD9Chart(series){if(!series||!series.length){emptyChart('d9Chart');return;}mkChart('d9Chart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Properties',data:series.map(e=>e.district9_listings??null),borderColor:C.blue,backgroundColor:C.blue+'22',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:0,suggestedMax:60}}}});const last=series[series.length-1];if(last)$('d9-note').textContent='Latest: '+last.district9_listings+' · Avg: AED '+(last.d9_avg_price?last.d9_avg_price.toLocaleString():'—');}
-function renderBenchChart(series){if(!series||!series.length){emptyChart('benchChart');return;}mkChart('benchChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'AED M',data:series.map(e=>e.benchmark_price_aed?+(e.benchmark_price_aed/1e6).toFixed(3):null),borderColor:C.coral,backgroundColor:C.coral+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>'AED '+v.toFixed(1)+'M',min:2.5,max:4.0}}}});$('bench-note').innerHTML='<span style="color:'+C.teal+';">NO CHANGE</span> · <span style="color:var(--muted);">AED 3.2M · 3,860 sqft · ready 2–3 months</span>';}
-function renderAjmanMetrics(series){if(!series||!series.length){$('ajman-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;">No Ajman data.</div>';return;}const last=series[series.length-1],prev=series.length>=2?series[series.length-2]:null,sale=last.ajman_for_sale||0,rent=last.ajman_for_rent||0,ratio=+(sale/rent).toFixed(3),saleChg=prev&&sale?((sale-prev.ajman_for_sale)/prev.ajman_for_sale*100).toFixed(1):null,rentChg=prev&&rent?((rent-prev.ajman_for_rent)/prev.ajman_for_rent*100).toFixed(1):null;$('ajman-metrics').innerHTML='<div class="mc"><div class="lbl">For Sale</div><div class="val" style="color:'+C.amber+';">'+fmt(sale)+'</div><div class="sub">'+(saleChg!==null?(Number(saleChg)>=0?'+':'')+saleChg+'% vs prev':'First')+'</div></div><div class="mc"><div class="lbl">For Rent</div><div class="val" style="color:'+C.blue+';">'+fmt(rent)+'</div><div class="sub">'+(rentChg!==null?(Number(rentChg)>=0?'+':'')+rentChg+'% vs prev':'First')+'</div></div><div class="mc"><div class="lbl">Sale:Rent</div><div class="val" style="color:'+(ratio>=2.5?C.red:ratio>=2.0?C.amber:C.teal)+';">'+(ratio>0?ratio.toFixed(3):'—')+'</div><div class="sub">Watch >2.0</div></div><div class="mc"><div class="lbl">Avg Sale Price</div><div class="val" style="font-size:16px;color:'+C.teal+';">'+(last.ajman_for_sale_avg_price?'AED '+Math.round(last.ajman_for_sale_avg_price/1000)+'k':'—')+'</div><div class="sub">Bayut avg</div></div>';const pill=$('ajman-ratio-pill');pill.textContent='Sale:Rent = '+(ratio>0?ratio.toFixed(3):'—');pill.className='pill '+(ratio>=2.5?'p-red':ratio>=2.0?'p-warn':'p-ok');}
-function renderAjmanCharts(series){if(!series||!series.length){emptyChart('ajmanSaleChart');emptyChart('ajmanRentChart');emptyChart('ratioChart');return;}const labels=series.map(fmtDate);mkChart('ajmanSaleChart',{type:'line',data:{labels,datasets:[{label:'For Sale',data:series.map(e=>e.ajman_for_sale??null),borderColor:C.amber,backgroundColor:C.amber+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>(v/1000).toFixed(0)+'k',suggestedMin:60000}}}});mkChart('ajmanRentChart',{type:'line',data:{labels,datasets:[{label:'For Rent',data:series.map(e=>e.ajman_for_rent??null),borderColor:C.blue,backgroundColor:C.blue+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>(v/1000).toFixed(0)+'k',suggestedMin:40000}}}});const ratios=series.map(e=>(e.ajman_for_sale&&e.ajman_for_rent)?+(e.ajman_for_sale/e.ajman_for_rent).toFixed(3):null);mkChart('ratioChart',{type:'line',data:{labels,datasets:[{label:'Sale:Rent',data:ratios,borderColor:C.purple,backgroundColor:C.purple+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true},{label:'Watch(2.0)',data:series.map(()=>2.0),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},{label:'Alert(2.5)',data:series.map(()=>2.5),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:1.0,max:3.0}}}});}
-async function loadData(){const r=await fetch(GIST+'/uae_history.json?t='+Date.now());if(!r.ok)throw new Error('Gist fetch failed ('+r.status+')');return r.json();}
-async function render(){try{const history=await loadData();const stress=history.latest_stress||(history.stress_series||[]).slice(-1)[0]||{};const now=new Date();$('hdr-sub').innerHTML='<span class="pulse"></span>Checked: '+now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · '+now.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});const sp=$('stress-pill');sp.textContent=(stress.total||'—')+' / 100 — '+(stress.band||'');sp.className='pill '+pillCls(stress.band);if(stress.total)updateGauge(stress.total);$('hyte-pill').textContent=hyteMode(stress.total||0);$('alz-pill').textContent=alzMode(stress.total||0);renderSubscores(stress);renderStressChart(history.stress_series||[]);renderDubChart(history.dubizzle_series||[]);renderMotors(history.dubizzle_motors_series||[]);renderPropertySale(history.dubizzle_property_sale_series||[]);renderPropertyRent(history.dubizzle_property_rent_series||[]);renderJobs(history.dubizzle_jobs_series||[]);const luxSeries=history.luxury_drops_series||[];renderLuxury(luxSeries[luxSeries.length-1],stress.components?.luxury||0);renderLuxChart(luxSeries);renderD9Chart(history.bayut_series||[]);renderBenchChart(history.bayut_series||[]);const ajmanSeries=history.ajman_property_series||[];renderAjmanMetrics(ajmanSeries);renderAjmanCharts(ajmanSeries);const lastStress=(history.stress_series||[]).slice(-1)[0];$('last-updated').textContent='Last collection: '+(lastStress?.date||'unknown')+' · Stress: '+(stress.total||'—')+'/100';}catch(e){console.error(e);$('warn-area').innerHTML='<div class="warn-box">⚠ Failed to load: '+e.message+'</div>';}}
+function alzMode(s){return s<50?'Hold fully':s<65?'Improve selectively':s<75?'Partial exit':'Urgent sale';}
+
+function updateGauge(score){
+  const cx=110,cy=108,r=88,startA=218,sweep=284;
+  const polar=d=>{const rad=(d-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy+r*Math.sin(rad)};};
+  const endDeg=startA+(score/100)*sweep;
+  const s=polar(startA),e=polar(endDeg),large=((score/100)*sweep)>180?1:0;
+  $('gauge-arc').setAttribute('d','M '+s.x+','+s.y+' A '+r+','+r+' 0 '+large+',1 '+e.x+','+e.y);
+  const nRad=(endDeg-90)*Math.PI/180;
+  $('gauge-needle').setAttribute('x2',(cx+(r-14)*Math.cos(nRad)).toFixed(1));
+  $('gauge-needle').setAttribute('y2',(cy+(r-14)*Math.sin(nRad)).toFixed(1));
+  const col=score>=65?C.red:score>=45?C.amber:C.green;
+  $('gauge-arc').setAttribute('stroke',col);
+  $('gauge-num').textContent=score;
+  $('gauge-num').style.color=col;
+}
+
+function renderSubscores(stress){
+  const names={dubizzle:'A — Used cars',luxury:'B — Luxury drops',bayut:'C — Bayut/D9',ajman_ratio:'D — Ajman ratio'};
+  const order=['dubizzle','luxury','bayut','ajman_ratio'];
+  $('subscores').innerHTML=order.map(k=>{
+    const s=stress.components?.[k]??0,pct=s/25;
+    const col=pct>=0.8?C.red:pct>=0.5?C.amber:C.green;
+    return '<div class="bar-row"><div class="bar-lbl">'+names[k]+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(pct*100)+'%;background:'+col+';"></div></div><div class="bar-val" style="color:'+col+';">'+s+'/25</div></div>';
+  }).join('');
+}
+
+function renderStressChart(series){
+  if(!series||!series.length){emptyChart('stressChart');return;}
+  const colors=series.map(e=>e.total>=60?C.red:e.total>=45?C.amber:C.green);
+  mkChart('stressChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[
+    {label:'Stress',data:series.map(e=>e.total??null),borderColor:C.purple,backgroundColor:C.purple+'18',borderWidth:2.5,pointRadius:4,pointBackgroundColor:colors,fill:true,tension:0.35,spanGaps:true},
+    {label:'High',data:series.map(()=>60),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+    {label:'Clear',data:series.map(()=>45),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:0,max:100}}}});
+}
+
+function renderUsedCars(series){
+  const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;
+  const BASELINE=38770;
+  if(!last){$('usedcars-pill').textContent='No data';emptyChart('usedCarsChart');return;}
+  const v=last.used_cars||0,chg=prev?v-prev.used_cars:0;
+  const trend=v>BASELINE?'▲ '+(((v-BASELINE)/BASELINE*100).toFixed(1))+'% above baseline':v<BASELINE?'▼ Below baseline':'At baseline';
+  const pill=$('usedcars-pill');pill.textContent=fmt(v)+' · '+trend;pill.className='pill '+(v>BASELINE*1.05?'p-red':v>BASELINE*1.02?'p-warn':'p-ok');
+  if(series.length<2){emptyChart('usedCarsChart');return;}
+  mkChart('usedCarsChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[
+    {label:'Used cars',data:series.map(e=>e.used_cars??null),borderColor:C.amber,backgroundColor:C.amber+'18',borderWidth:2.5,pointRadius:4,fill:true,tension:0.35,spanGaps:true},
+    {label:'Baseline',data:series.map(()=>BASELINE),borderColor:C.gray,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>v.toLocaleString())}});
+}
+
+function renderEmirateSection(series, prefix, mainLabel){
+  const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;
+  if(!last){
+    $(prefix+'-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;font-size:11px;">No data yet — runs nightly at midnight UAE time</div>';
+    $(prefix+'-pill').textContent='No data';
+    emptyChart(prefix==='propsale'?'propSaleChart':'propRentChart');
+    return;
+  }
+  // Cards: UAE total prominent, then each emirate
+  const cards = EMIRATE_KEYS.filter(k=>last[k]!=null).map(k=>{
+    const v=last[k],p=prev?.[k];
+    const chg=p&&v?((v-p)/p*100).toFixed(1):null;
+    const col=EMIRATE_COLORS[k];
+    return '<div class="mc'+(k==='uae'?'':' mc-sm')+'"><div class="lbl">'+EMIRATE_NAMES[k]+'</div><div class="val" style="color:'+col+';">'+fmt(v)+'</div><div class="sub">'+(chg!==null?(Number(chg)>=0?'+':'')+chg+'% vs prev':'baseline')+'</div></div>';
+  }).join('');
+  $(prefix+'-metrics').innerHTML=cards;
+
+  // Pill
+  const uaeTotal=last.uae;
+  const uaeTotalPrev=prev?.uae;
+  const uaeChg=uaeTotalPrev&&uaeTotal?((uaeTotal-uaeTotalPrev)/uaeTotalPrev*100).toFixed(2):null;
+  const pill=$(prefix+'-pill');
+  pill.textContent='UAE: '+fmt(uaeTotal)+(uaeChg!==null?' ('+(Number(uaeChg)>=0?'+':'')+uaeChg+'%)':'');
+  pill.className='pill '+(uaeChg!==null&&Number(uaeChg)>1?'p-red':uaeChg!==null&&Number(uaeChg)>0.3?'p-warn':'p-ok');
+
+  // Legend (city colors)
+  const leg=$(prefix+'-leg');leg.innerHTML='';
+  ['uae','dubai','abu_dhabi','sharjah','ajman','rak'].forEach(k=>{
+    const d=document.createElement('div');d.className='li';
+    d.innerHTML='<span class="ld" style="background:'+EMIRATE_COLORS[k]+';"></span>'+EMIRATE_NAMES[k];
+    leg.appendChild(d);
+  });
+
+  // Chart with multi-line per emirate (skip UAE total to keep scale readable; show top 5 emirates)
+  if(series.length<2){emptyChart(prefix==='propsale'?'propSaleChart':'propRentChart');return;}
+  const lineKeys=['dubai','abu_dhabi','sharjah','ajman','rak'];
+  mkChart(prefix==='propsale'?'propSaleChart':'propRentChart',{type:'line',data:{labels:series.map(fmtDate),datasets:lineKeys.map(k=>({
+    label:EMIRATE_NAMES[k],
+    data:series.map(e=>e[k]??null),
+    borderColor:EMIRATE_COLORS[k],
+    borderWidth:k==='ajman'?2.5:1.5,
+    pointRadius:k==='ajman'?3:2,
+    tension:0.35,fill:false,spanGaps:true
+  }))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});
+}
+
+function renderJobs(series){
+  const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null,BASELINE=1310;
+  if(!last){$('jobs-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;font-size:11px;">No jobs data yet — baseline 1,310</div>';emptyChart('jobsChart');return;}
+  const v=last.full_time||0,chg=prev?v-(prev.full_time||0):0;
+  const trend=v>BASELINE?'▲ Above baseline':v<BASELINE?'▼ Below baseline':'At baseline';
+  const trendCol=v>BASELINE?C.green:v<BASELINE*0.9?C.red:C.amber;
+  $('jobs-metrics').innerHTML=[
+    {lbl:'Full-Time Jobs UAE',val:fmt(v),sub:(chg>=0?'+':'')+chg+' vs prev',col:trendCol},
+    {lbl:'Baseline (May 6)',val:'1,310',sub:'reference point',col:C.gray},
+    {lbl:'Δ from baseline',val:(v-BASELINE>=0?'+':'')+(v-BASELINE),sub:((v-BASELINE)/BASELINE*100).toFixed(1)+'%',col:trendCol}
+  ].map(({lbl,val,sub,col})=>'<div class="mc"><div class="lbl">'+lbl+'</div><div class="val" style="color:'+col+';">'+(val||'—')+'</div><div class="sub">'+sub+'</div></div>').join('');
+  const pill=$('jobs-direction-pill');pill.textContent=trend;pill.className='pill '+(v>BASELINE?'p-ok':v<BASELINE*0.9?'p-red':'p-warn');
+  if(series.length<2){emptyChart('jobsChart');return;}
+  mkChart('jobsChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[
+    {label:'Full-time jobs',data:series.map(e=>e.full_time??null),borderColor:C.green,backgroundColor:C.green+'18',borderWidth:2.5,pointRadius:4,fill:true,tension:0.35,spanGaps:true},
+    {label:'Baseline (1,310)',data:series.map(()=>BASELINE),borderColor:C.gray,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>v.toLocaleString())}});
+}
+
+function renderLuxury(lastLux,dScr){
+  if(!lastLux){$('lux-metrics').innerHTML='<div style="color:var(--muted);font-size:11px;grid-column:1/-1;">No luxury drops data.</div>';emptyChart('luxChart');return;}
+  const dc=lastLux.drop_count||0,avg=lastLux.avg_drop_pct||0,maxD=lastLux.max_drop_pct||avg;
+  $('lux-metrics').innerHTML=
+    '<div class="mc"><div class="lbl">Drop count</div><div class="val" style="color:'+C.red+';">'+fmt(dc)+'</div><div class="sub">detected</div></div>'+
+    '<div class="mc"><div class="lbl">Avg drop</div><div class="val" style="color:'+C.red+';">'+avg+'%</div><div class="sub">across all</div></div>'+
+    '<div class="mc"><div class="lbl">Max drop</div><div class="val" style="color:'+C.red+';">'+maxD+'%</div><div class="sub">single listing</div></div>'+
+    '<div class="mc"><div class="lbl">Score</div><div class="val" style="color:'+(dScr>=20?C.red:dScr>=14?C.amber:C.green)+';">'+dScr+'/25</div><div class="sub">B component</div></div>';
+  const dp=$('lux-d-pill');dp.textContent='B: '+dScr+'/25';dp.className='pill '+(dScr>=20?'p-red':dScr>=14?'p-warn':'p-ok');
+}
+
+function renderLuxChart(series){
+  if(!series||!series.length){emptyChart('luxChart');return;}
+  mkChart('luxChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[
+    {label:'Drop count',data:series.map(e=>e.drop_count??null),borderColor:C.red,backgroundColor:C.red+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true},
+    {label:'Elevated',data:series.map(()=>1500),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+    {label:'Max stress',data:series.map(()=>2500),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>v.toLocaleString(),min:0,suggestedMax:3000}}}});
+}
+
+function renderD9Chart(series){
+  if(!series||!series.length){emptyChart('d9Chart');return;}
+  mkChart('d9Chart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'Properties',data:series.map(e=>e.district9_listings??null),borderColor:C.blue,backgroundColor:C.blue+'22',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:0,suggestedMax:60}}}});
+  const last=series[series.length-1];
+  if(last)$('d9-note').textContent='Latest: '+last.district9_listings+' properties · Avg: AED '+(last.d9_avg_price?last.d9_avg_price.toLocaleString():'—');
+}
+
+function renderBenchChart(series){
+  if(!series||!series.length){emptyChart('benchChart');return;}
+  mkChart('benchChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[{label:'AED M',data:series.map(e=>e.benchmark_price_aed?+(e.benchmark_price_aed/1e6).toFixed(3):null),borderColor:C.coral,backgroundColor:C.coral+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>'AED '+v.toFixed(1)+'M',min:2.5,max:4.0}}}});
+  $('bench-note').innerHTML='<span style="color:'+C.teal+';">NO CHANGE</span> · <span style="color:var(--muted);">AED 3.2M · 3,860 sqft · ready 2–3 months</span>';
+}
+
+function renderAjmanMetrics(series){
+  if(!series||!series.length){$('ajman-metrics').innerHTML='<div style="color:var(--muted);font-size:11px;grid-column:1/-1;">No Ajman data.</div>';return;}
+  const last=series[series.length-1],prev=series.length>=2?series[series.length-2]:null;
+  const sale=last.ajman_for_sale||0,rent=last.ajman_for_rent||0,ratio=+(sale/rent).toFixed(3);
+  const saleChg=prev&&sale?((sale-prev.ajman_for_sale)/prev.ajman_for_sale*100).toFixed(1):null;
+  const rentChg=prev&&rent?((rent-prev.ajman_for_rent)/prev.ajman_for_rent*100).toFixed(1):null;
+  $('ajman-metrics').innerHTML=
+    '<div class="mc"><div class="lbl">For Sale</div><div class="val" style="color:'+C.amber+';">'+fmt(sale)+'</div><div class="sub">'+(saleChg!==null?(Number(saleChg)>=0?'+':'')+saleChg+'% vs prev':'First reading')+'</div></div>'+
+    '<div class="mc"><div class="lbl">For Rent</div><div class="val" style="color:'+C.blue+';">'+fmt(rent)+'</div><div class="sub">'+(rentChg!==null?(Number(rentChg)>=0?'+':'')+rentChg+'% vs prev':'First reading')+'</div></div>'+
+    '<div class="mc"><div class="lbl">Sale:Rent</div><div class="val" style="color:'+(ratio>=2.5?C.red:ratio>=2.0?C.amber:C.teal)+';">'+(ratio>0?ratio.toFixed(3):'—')+'</div><div class="sub">Watch >2.0</div></div>'+
+    '<div class="mc"><div class="lbl">Avg Sale Price</div><div class="val" style="font-size:16px;color:'+C.teal+';">'+(last.ajman_for_sale_avg_price?'AED '+Math.round(last.ajman_for_sale_avg_price/1000)+'k':'—')+'</div><div class="sub">Bayut avg</div></div>';
+  const pill=$('ajman-ratio-pill');pill.textContent='Sale:Rent = '+(ratio>0?ratio.toFixed(3):'—');pill.className='pill '+(ratio>=2.5?'p-red':ratio>=2.0?'p-warn':'p-ok');
+}
+
+function renderAjmanCharts(series){
+  if(!series||!series.length){emptyChart('ajmanSaleChart');emptyChart('ajmanRentChart');emptyChart('ratioChart');return;}
+  const labels=series.map(fmtDate);
+  mkChart('ajmanSaleChart',{type:'line',data:{labels,datasets:[{label:'For Sale',data:series.map(e=>e.ajman_for_sale??null),borderColor:C.amber,backgroundColor:C.amber+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>(v/1000).toFixed(0)+'k',suggestedMin:60000}}}});
+  mkChart('ajmanRentChart',{type:'line',data:{labels,datasets:[{label:'For Rent',data:series.map(e=>e.ajman_for_rent??null),borderColor:C.blue,backgroundColor:C.blue+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,callback:v=>(v/1000).toFixed(0)+'k',suggestedMin:40000}}}});
+  const ratios=series.map(e=>(e.ajman_for_sale&&e.ajman_for_rent)?+(e.ajman_for_sale/e.ajman_for_rent).toFixed(3):null);
+  mkChart('ratioChart',{type:'line',data:{labels,datasets:[
+    {label:'Sale:Rent',data:ratios,borderColor:C.purple,backgroundColor:C.purple+'18',borderWidth:2,pointRadius:3,fill:true,tension:0.35,spanGaps:true},
+    {label:'Watch',data:series.map(()=>2.0),borderColor:C.amber,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false},
+    {label:'Alert',data:series.map(()=>2.5),borderColor:C.red,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:1.0,max:3.0}}}});
+}
+
+async function loadData(){
+  const r=await fetch(GIST+'/uae_history.json?t='+Date.now());
+  if(!r.ok) throw new Error('Gist fetch failed ('+r.status+')');
+  return r.json();
+}
+
+async function render(){
+  try{
+    const history=await loadData();
+    const stress=history.latest_stress||(history.stress_series||[]).slice(-1)[0]||{};
+    const now=new Date();
+    $('hdr-sub').innerHTML='<span class="pulse"></span>Checked: '+now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · '+now.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    const sp=$('stress-pill');sp.textContent=(stress.total||'—')+' / 100 — '+(stress.band||'');sp.className='pill '+pillCls(stress.band);
+    if(stress.total)updateGauge(stress.total);
+    $('hyte-pill').textContent=hyteMode(stress.total||0);
+    $('alz-pill').textContent=alzMode(stress.total||0);
+    renderSubscores(stress);
+    renderStressChart(history.stress_series||[]);
+    renderUsedCars(history.dubizzle_motors_series||[]);
+    renderEmirateSection(history.dubizzle_property_sale_series||[],'propsale','for-sale');
+    renderEmirateSection(history.dubizzle_property_rent_series||[],'proprent','for-rent');
+    renderJobs(history.dubizzle_jobs_series||[]);
+    const luxSeries=history.luxury_drops_series||[];
+    renderLuxury(luxSeries[luxSeries.length-1],stress.components?.luxury||0);
+    renderLuxChart(luxSeries);
+    renderD9Chart(history.bayut_series||[]);
+    renderBenchChart(history.bayut_series||[]);
+    const ajmanSeries=history.ajman_property_series||[];
+    renderAjmanMetrics(ajmanSeries);
+    renderAjmanCharts(ajmanSeries);
+    const lastStress=(history.stress_series||[]).slice(-1)[0];
+    $('last-updated').textContent='Last collection: '+(lastStress?.date||'unknown')+' · Stress: '+(stress.total||'—')+'/100';
+  }catch(e){
+    console.error(e);
+    $('warn-area').innerHTML='<div class="warn-box">⚠ Failed to load data: '+e.message+'</div>';
+  }
+}
+
 let nextAt=Date.now()+REFRESH_MS;
 setInterval(()=>{const s=Math.max(0,Math.round((nextAt-Date.now())/1000)),m=Math.floor(s/60);$('next-tick').textContent='Next refresh in '+m+':'+String(s%60).padStart(2,'0');},1000);
 setInterval(()=>{nextAt=Date.now()+REFRESH_MS;render();},REFRESH_MS);
 render();
-</script></body></html>
+</script>
+</body>
+</html>
