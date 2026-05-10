@@ -8,16 +8,10 @@ const SCRAPED_AT = new Date().toISOString();
 
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
-  jobs_fulltime: null,
-  motors_usedcars: null,
-  property_sale: null,
-  property_rent: null,
-  luxury: null,
-  bayut_d9: null,
-  bayut_ajman_sale: null,
-  bayut_ajman_rent: null,
-  benchmark: null,
-  errors: []
+  jobs_fulltime: null, motors_usedcars: null,
+  property_sale: null, property_rent: null, luxury: null,
+  bayut_d9: null, bayut_ajman_sale: null, bayut_ajman_rent: null,
+  benchmark: null, errors: []
 };
 
 const TARGETS = [
@@ -32,31 +26,15 @@ const TARGETS = [
   { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' }
 ];
 
-// ── DOM parsers ───────────────────────────────────────────────────────────────
-
-// Jobs: find the full-time link that contains "Jobs" in text, then get the <p> count
-// Structure: <a href="/jobs/s/type/full-time/"><div><span>Full Time</span><p>(1,213+ Jobs)</p></div></a>
+// Jobs: <a href="/jobs/s/type/full-time/"><div><span>Full Time</span><p>(1,213+ Jobs)</p></div></a>
 async function parseJobs(page, log) {
-  // Wait for the job type cards to render
-  try {
-    await page.waitForSelector('a[href*="full-time"] p', { timeout: 15000 });
-  } catch {
-    log.warning('jobs: waitForSelector timed out, trying anyway');
-  }
+  try { await page.waitForSelector('a[href*="full-time"] p', { timeout: 15000 }); }
+  catch { log.warning('jobs: waitForSelector timed out'); }
   return page.evaluate(() => {
-    // Find the link that has both "full-time" in href AND contains a <p> with Jobs count
     const ftLinks = Array.from(document.querySelectorAll('a[href*="full-time"]'));
     for (const link of ftLinks) {
       const p = link.querySelector('p');
       if (p && /Jobs/i.test(p.textContent)) {
-        const m = p.textContent.match(/([\d,]+)/);
-        if (m) return { full_time: parseInt(m[1].replace(/,/g, '')) };
-      }
-    }
-    // Fallback: any <p> with "(N+ Jobs)" pattern
-    const allP = Array.from(document.querySelectorAll('p'));
-    for (const p of allP) {
-      if (/\(\d[\d,]+\+?\s*Jobs\)/i.test(p.textContent)) {
         const m = p.textContent.match(/([\d,]+)/);
         if (m) return { full_time: parseInt(m[1].replace(/,/g, '')) };
       }
@@ -67,18 +45,14 @@ async function parseJobs(page, log) {
 
 // Motors: <p data-testid="Used Cars">Used Cars</p><p>38,600</p>
 async function parseMotors(page, log) {
-  try {
-    await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 });
-  } catch {
-    log.warning('motors: waitForSelector timed out');
-  }
+  try { await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 }); }
+  catch { log.warning('motors: waitForSelector timed out'); }
   return page.evaluate(() => {
     const el = document.querySelector('[data-testid="Used Cars"]');
     if (el && el.nextElementSibling) {
       const m = el.nextElementSibling.textContent.match(/([\d,]+)/);
       if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
     }
-    // Fallback: find "Used Cars" text sibling
     const allP = Array.from(document.querySelectorAll('p'));
     for (let i = 0; i < allP.length - 1; i++) {
       if (allP[i].textContent.trim() === 'Used Cars') {
@@ -120,14 +94,12 @@ async function parseLuxury(page) {
     const countEl = document.querySelector('[data-meta="count"]');
     const drop_count = countEl ? parseInt(countEl.textContent.replace(/,/g, '')) : null;
     if (!drop_count) return null;
-    // Avg drop from mstat-value elements
     const mstatEls = Array.from(document.querySelectorAll('[class*="mstat-value"]'));
     let avg_drop_pct = null;
     for (const el of mstatEls) {
       const m = el.textContent.match(/[\d.]+/);
       if (m) { avg_drop_pct = parseFloat(m[0]); break; }
     }
-    // Max drop from any element with "−N%" pattern
     const pctEls = Array.from(document.querySelectorAll('*')).filter(e =>
       e.children.length === 0 && /^[\u2212\-][\d.]+%$/.test(e.textContent.trim())
     );
@@ -137,7 +109,6 @@ async function parseLuxury(page) {
   });
 }
 
-// ── Bayut text parsers ────────────────────────────────────────────────────────
 function parseBayutCount(text) {
   if (!text) return null;
   const cl = text.split('\n').map(l => l.trim()).find(l => /\d+ to \d+ of [\d,]+ Propert/i.test(l));
@@ -166,137 +137,142 @@ function parseBenchmark(title) {
 }
 
 function computeStress(r) {
-  // A: Used cars as proxy for consumer stress (baseline 38,770 May 2026)
   const usedCars = r.motors_usedcars?.used_cars || 38770;
   const dubizzleScore = Math.min(25, Math.max(0, Math.round(((usedCars - 38770) / 38770) * 100 / 0.4)));
-  // B: Luxury drops
   const drops = r.luxury?.drop_count || 1542;
   const luxuryScore = Math.min(25, Math.round((drops - 1542) / 1542 * 100 / 2));
-  // C: Bayut D9
   const d9 = r.bayut_d9?.district9_listings ?? 31;
   const bayutScore = Math.min(25, Math.round((31 - d9) / 31 * 100 / 2));
-  // D: Ajman ratio
   const sale = r.bayut_ajman_sale?.count || 0;
   const rent = r.bayut_ajman_rent || 1;
   const ratio = (sale && rent) ? parseFloat((sale / rent).toFixed(3)) : 0;
   const ratioScore = Math.min(25, Math.max(0, Math.round(ratio * 10 - 12)));
   const total = dubizzleScore + luxuryScore + bayutScore + ratioScore;
-  const band = total < 30 ? 'Stable - no signal'
-    : total < 45 ? 'Mild stress building'
-    : total < 60 ? 'Clear stress building'
-    : total < 75 ? 'High stress - monitor closely'
-    : 'Crisis signal';
+  const band = total < 30 ? 'Stable - no signal' : total < 45 ? 'Mild stress building' : total < 60 ? 'Clear stress building' : total < 75 ? 'High stress - monitor closely' : 'Crisis signal';
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
-// ── Proxy ─────────────────────────────────────────────────────────────────────
-let proxyConfiguration;
+// ── Two proxy configurations ──────────────────────────────────────────────────
+// UAE proxy for Dubizzle/Bayut (local sites work better with UAE IPs)
+let proxyUAE;
 try {
-  proxyConfiguration = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
-} catch (e) { console.log('Proxy failed: ' + e.message); }
+  proxyUAE = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
+} catch (e) { console.log('UAE proxy failed: ' + e.message); }
 
-// ── Crawler ───────────────────────────────────────────────────────────────────
-const crawler = new PlaywrightCrawler({
-  proxyConfiguration,
+// US proxy for LuxuryPriceDrops (blocks UAE IPs specifically)
+let proxyUS;
+try {
+  proxyUS = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'US' });
+} catch (e) { console.log('US proxy failed: ' + e.message); }
+
+// ── Shared request handler ────────────────────────────────────────────────────
+async function handleRequest({ request, page, log }) {
+  const { id } = request.userData;
+  log.info('Scraping: ' + id);
+
+  try { await page.waitForLoadState('networkidle', { timeout: 30000 }); }
+  catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
+
+  const title = await page.title();
+  const bodyLen = await page.evaluate(() => document.body?.innerText?.length || 0);
+  log.info(id + ': title="' + title.substring(0, 70) + '" bodyLen=' + bodyLen);
+
+  if (bodyLen < 200) throw new Error('Empty body on ' + id);
+
+  let parsed = null;
+
+  switch (id) {
+    case 'jobs':
+      parsed = await parseJobs(page, log);
+      if (!parsed) throw new Error('dubizzle_jobs parse failed - fullTime=null');
+      results.jobs_fulltime = parsed;
+      break;
+    case 'motors':
+      parsed = await parseMotors(page, log);
+      if (!parsed) throw new Error('dubizzle_motors parse failed');
+      results.motors_usedcars = parsed;
+      break;
+    case 'prop_sale':
+      parsed = await parsePropertySale(page);
+      if (!parsed) throw new Error('prop_sale parse failed');
+      results.property_sale = parsed;
+      break;
+    case 'prop_rent':
+      parsed = await parsePropertyRent(page);
+      if (!parsed) throw new Error('prop_rent parse failed');
+      results.property_rent = parsed;
+      break;
+    case 'luxury':
+      parsed = await parseLuxury(page);
+      if (!parsed) throw new Error('luxury parse failed');
+      results.luxury = parsed;
+      break;
+    case 'bayut_d9': {
+      const text = await page.evaluate(() => document.body?.innerText || '');
+      parsed = parseBayutD9(text);
+      if (!parsed) throw new Error('bayut_d9 parse failed');
+      results.bayut_d9 = parsed;
+      break;
+    }
+    case 'bayut_ajman_sale': {
+      const text = await page.evaluate(() => document.body?.innerText || '');
+      parsed = parseBayutAjmanSale(text);
+      if (!parsed) throw new Error('bayut_ajman_sale parse failed');
+      results.bayut_ajman_sale = parsed;
+      break;
+    }
+    case 'bayut_ajman_rent': {
+      const text = await page.evaluate(() => document.body?.innerText || '');
+      parsed = parseBayutCount(text);
+      if (!parsed) throw new Error('bayut_ajman_rent parse failed');
+      results.bayut_ajman_rent = parsed;
+      break;
+    }
+    case 'benchmark': {
+      parsed = parseBenchmark(title);
+      if (!parsed) throw new Error('benchmark parse failed');
+      results.benchmark = parsed;
+      break;
+    }
+  }
+  log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 120));
+  await page.close();
+}
+
+function failedHandler({ request, error }) {
+  console.error('FAILED ' + request.userData.id + ': ' + error.message);
+  results.errors.push({ source: request.userData.id, error: error.message });
+}
+
+// ── Crawler 1: UAE proxy — Dubizzle + Bayut ───────────────────────────────────
+const uaeCrawler = new PlaywrightCrawler({
+  proxyConfiguration: proxyUAE,
   maxRequestRetries: 2,
   navigationTimeoutSecs: 90,
   requestHandlerTimeoutSecs: 120,
   maxConcurrency: 1,
   launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
-
-  async requestHandler({ request, page, log }) {
-    const { id } = request.userData;
-    log.info('Scraping: ' + id);
-
-    try { await page.waitForLoadState('networkidle', { timeout: 30000 }); }
-    catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
-
-    const title = await page.title();
-    const bodyLen = await page.evaluate(() => document.body?.innerText?.length || 0);
-    log.info(id + ': title="' + title.substring(0, 70) + '" bodyLen=' + bodyLen);
-
-    if (bodyLen < 200) throw new Error('Empty body on ' + id);
-
-    let parsed = null;
-
-    switch (id) {
-      case 'jobs':
-        parsed = await parseJobs(page, log);
-        if (!parsed) throw new Error('dubizzle_jobs parse failed - fullTime=null');
-        results.jobs_fulltime = parsed;
-        log.info('OK dubizzle_jobs: ' + JSON.stringify(parsed));
-        break;
-
-      case 'motors':
-        parsed = await parseMotors(page, log);
-        if (!parsed) throw new Error('dubizzle_motors parse failed');
-        results.motors_usedcars = parsed;
-        log.info('OK dubizzle_motors: ' + JSON.stringify(parsed));
-        break;
-
-      case 'prop_sale':
-        parsed = await parsePropertySale(page);
-        if (!parsed) throw new Error('dubizzle_property_sale parse failed');
-        results.property_sale = parsed;
-        log.info('OK dubizzle_property_sale: ' + JSON.stringify(parsed));
-        break;
-
-      case 'prop_rent':
-        parsed = await parsePropertyRent(page);
-        if (!parsed) throw new Error('dubizzle_property_rent parse failed');
-        results.property_rent = parsed;
-        log.info('OK dubizzle_property_rent: ' + JSON.stringify(parsed));
-        break;
-
-      case 'luxury':
-        parsed = await parseLuxury(page);
-        if (!parsed) throw new Error('luxury parse failed');
-        results.luxury = parsed;
-        log.info('OK luxury: ' + JSON.stringify(parsed));
-        break;
-
-      case 'bayut_d9': {
-        const text = await page.evaluate(() => document.body?.innerText || '');
-        parsed = parseBayutD9(text);
-        if (!parsed) throw new Error('bayut_d9 parse failed');
-        results.bayut_d9 = parsed;
-        log.info('OK bayut_d9: ' + JSON.stringify(parsed));
-        break;
-      }
-      case 'bayut_ajman_sale': {
-        const text = await page.evaluate(() => document.body?.innerText || '');
-        parsed = parseBayutAjmanSale(text);
-        if (!parsed) throw new Error('bayut_ajman_sale parse failed');
-        results.bayut_ajman_sale = parsed;
-        log.info('OK bayut_ajman_sale: ' + JSON.stringify(parsed));
-        break;
-      }
-      case 'bayut_ajman_rent': {
-        const text = await page.evaluate(() => document.body?.innerText || '');
-        parsed = parseBayutCount(text);
-        if (!parsed) throw new Error('bayut_ajman_rent parse failed');
-        results.bayut_ajman_rent = parsed;
-        log.info('OK bayut_ajman_rent: ' + parsed);
-        break;
-      }
-      case 'benchmark': {
-        parsed = parseBenchmark(title);
-        if (!parsed) throw new Error('benchmark parse failed');
-        results.benchmark = parsed;
-        log.info('OK benchmark: ' + JSON.stringify(parsed));
-        break;
-      }
-    }
-    await page.close();
-  },
-
-  failedRequestHandler({ request, error }) {
-    console.error('FAILED ' + request.userData.id + ': ' + error.message);
-    results.errors.push({ source: request.userData.id, error: error.message });
-  }
+  requestHandler: handleRequest,
+  failedRequestHandler: failedHandler
 });
 
-await crawler.run(TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
+// ── Crawler 2: US proxy — LuxuryPriceDrops only ───────────────────────────────
+const usCrawler = new PlaywrightCrawler({
+  proxyConfiguration: proxyUS,
+  maxRequestRetries: 2,
+  navigationTimeoutSecs: 90,
+  requestHandlerTimeoutSecs: 120,
+  maxConcurrency: 1,
+  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
+  requestHandler: handleRequest,
+  failedRequestHandler: failedHandler
+});
+
+const UAE_TARGETS = TARGETS.filter(t => t.id !== 'luxury');
+const LUXURY_TARGETS = TARGETS.filter(t => t.id === 'luxury');
+
+await uaeCrawler.run(UAE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
+await usCrawler.run(LUXURY_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
 const bayutSaleCount = results.bayut_ajman_sale?.count || null;
