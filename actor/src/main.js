@@ -8,37 +8,17 @@ const SCRAPED_AT = new Date().toISOString();
 
 const results = {
   date: TODAY, scraped_at: SCRAPED_AT,
-  jobs_fulltime: null, motors_usedcars: null,
+  motors_usedcars: null,
   classified: null,
-  property_sale: {}, property_rent: {},
+  property_sale: null,
+  property_rent: null,
   luxury: null,
-  bayut_d9: null, bayut_ajman_sale: null, bayut_ajman_rent: null,
+  bayut_d9: null,
+  bayut_ajman_sale: null,
+  bayut_ajman_rent: null,
   benchmark: null,
   errors: []
 };
-
-const PROP_SALE_TARGETS = [
-  { id: 'prop_sale_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_abudhabi',  key: 'abu_dhabi', url: 'https://abudhabi.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_sharjah',   key: 'sharjah',   url: 'https://sharjah.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_ajman',     key: 'ajman',     url: 'https://ajman.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_rak',       key: 'rak',       url: 'https://rak.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_fujairah',  key: 'fujairah',  url: 'https://fujairah.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_sale_alain',     key: 'alain',     url: 'https://alain.dubizzle.com/en/property-for-sale/residential/' }
-];
-
-const PROP_RENT_TARGETS = [
-  { id: 'prop_rent_uae',       key: 'uae',       url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_dubai',     key: 'dubai',     url: 'https://dubai.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_abudhabi',  key: 'abu_dhabi', url: 'https://abudhabi.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_sharjah',   key: 'sharjah',   url: 'https://sharjah.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_ajman',     key: 'ajman',     url: 'https://ajman.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_rak',       key: 'rak',       url: 'https://rak.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_fujairah',  key: 'fujairah',  url: 'https://fujairah.dubizzle.com/en/property-for-rent/residential/' },
-  { id: 'prop_rent_uaq',       key: 'uaq',       url: 'https://uaq.dubizzle.com/en/property-for-rent/residential/' }
-];
 
 const CLASSIFIED_TARGETS = [
   { id: 'cls_furniture',    key: 'furniture_home',  url: 'https://uae.dubizzle.com/en/classified/furniture-home-garden/' },
@@ -49,10 +29,10 @@ const CLASSIFIED_TARGETS = [
   { id: 'cls_computers',    key: 'computers',       url: 'https://uae.dubizzle.com/en/classified/computers-networking/' }
 ];
 
-// IMPORTANT: Run jobs+motors FIRST to warm up the proxy with simple homepage-like requests
 const SINGLE_TARGETS = [
-  { id: 'jobs',             url: 'https://uae.dubizzle.com/jobs/' },
   { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
+  { id: 'prop_sale',        url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_rent',        url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
   { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
   { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
   { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
@@ -63,22 +43,6 @@ const LUXURY_TARGETS = [
   { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
 
-async function parseJobs(page, log) {
-  try { await page.waitForSelector('a[href*="full-time"] p', { timeout: 12000 }); }
-  catch { log.warning('jobs: waitForSelector timed out'); }
-  return page.evaluate(() => {
-    const ftLinks = Array.from(document.querySelectorAll('a[href*="full-time"]'));
-    for (const link of ftLinks) {
-      const p = link.querySelector('p');
-      if (p && /Jobs/i.test(p.textContent)) {
-        const m = p.textContent.match(/([\d,]+)/);
-        if (m) return { full_time: parseInt(m[1].replace(/,/g, '')) };
-      }
-    }
-    return null;
-  });
-}
-
 async function parseMotors(page, log) {
   try { await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 }); }
   catch { log.warning('motors: waitForSelector timed out'); }
@@ -87,6 +51,13 @@ async function parseMotors(page, log) {
     if (el && el.nextElementSibling) {
       const m = el.nextElementSibling.textContent.match(/([\d,]+)/);
       if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
+    }
+    const allP = Array.from(document.querySelectorAll('p'));
+    for (let i = 0; i < allP.length - 1; i++) {
+      if (allP[i].textContent.trim() === 'Used Cars') {
+        const m = allP[i + 1].textContent.match(/([\d,]+)/);
+        if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
+      }
     }
     return null;
   });
@@ -191,21 +162,6 @@ async function handleRequest({ request, page, log }) {
   const { id, group, key } = request.userData;
   log.info('Scraping: ' + id);
 
-  // Anti-bot: realistic browser headers
-  await page.setExtraHTTPHeaders({
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-    'Cache-Control': 'no-cache',
-    'Sec-Ch-Ua': '"Chromium";v="124", "Not(A:Brand";v="24", "Google Chrome";v="124"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"Windows"',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Upgrade-Insecure-Requests': '1'
-  });
-
   try { await page.waitForLoadState('networkidle', { timeout: 25000 }); }
   catch { await page.waitForLoadState('domcontentloaded'); await sleep(3000); }
 
@@ -217,45 +173,35 @@ async function handleRequest({ request, page, log }) {
 
   let parsed = null;
 
-  if (group === 'prop_sale') {
-    parsed = await parseListingCount(page);
-    if (!parsed) throw new Error(id + ' parse failed');
-    results.property_sale[key] = parsed;
-    log.info('OK ' + id + ': ' + key + '=' + parsed);
-    await sleep(2000); // Polite delay between Dubizzle requests
-    await page.close();
-    return;
-  }
-  if (group === 'prop_rent') {
-    parsed = await parseListingCount(page);
-    if (!parsed) throw new Error(id + ' parse failed');
-    results.property_rent[key] = parsed;
-    log.info('OK ' + id + ': ' + key + '=' + parsed);
-    await sleep(2000);
-    await page.close();
-    return;
-  }
   if (group === 'classified') {
     parsed = await parseListingCount(page);
     if (!parsed) throw new Error(id + ' parse failed');
     if (!results.classified) results.classified = {};
     results.classified[key] = parsed;
     log.info('OK ' + id + ': ' + key + '=' + parsed);
-    await sleep(2000);
+    await sleep(5000);
     await page.close();
     return;
   }
 
   switch (id) {
-    case 'jobs':
-      parsed = await parseJobs(page, log);
-      if (!parsed) throw new Error('jobs parse failed - fullTime=null');
-      results.jobs_fulltime = parsed;
-      break;
     case 'motors':
       parsed = await parseMotors(page, log);
       if (!parsed) throw new Error('motors parse failed');
       results.motors_usedcars = parsed;
+      await sleep(5000);
+      break;
+    case 'prop_sale':
+      parsed = await parseListingCount(page);
+      if (!parsed) throw new Error('prop_sale parse failed');
+      results.property_sale = { total_uae: parsed };
+      await sleep(5000);
+      break;
+    case 'prop_rent':
+      parsed = await parseListingCount(page);
+      if (!parsed) throw new Error('prop_rent parse failed');
+      results.property_rent = { total_uae: parsed };
+      await sleep(5000);
       break;
     case 'luxury':
       parsed = await parseLuxury(page);
@@ -290,7 +236,6 @@ async function handleRequest({ request, page, log }) {
       break;
   }
   log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 120));
-  await sleep(1500);
   await page.close();
 }
 
@@ -299,23 +244,13 @@ function failedHandler({ request, error }) {
   results.errors.push({ source: request.userData.id, error: error.message });
 }
 
-// CRITICAL: useSessionPool keeps same proxy IP per session, persistCookiesPerSession reuses cookies
-// This makes us look like a real user instead of fresh anonymous request each time
 const uaeCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyUAE,
-  useSessionPool: true,
-  persistCookiesPerSession: true,
-  sessionPoolOptions: { maxPoolSize: 1 },
   maxRequestRetries: 2,
-  navigationTimeoutSecs: 90,
-  requestHandlerTimeoutSecs: 120,
+  navigationTimeoutSecs: 60,
+  requestHandlerTimeoutSecs: 90,
   maxConcurrency: 1,
-  launchContext: {
-    launchOptions: {
-      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-blink-features=AutomationControlled']
-    },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-  },
+  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
   requestHandler: handleRequest,
   failedRequestHandler: failedHandler
 });
@@ -326,20 +261,15 @@ const usCrawler = new PlaywrightCrawler({
   navigationTimeoutSecs: 60,
   requestHandlerTimeoutSecs: 90,
   maxConcurrency: 1,
-  launchContext: {
-    launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-  },
+  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
   requestHandler: handleRequest,
   failedRequestHandler: failedHandler
 });
 
-// Order: Bayut FIRST (warm up), THEN jobs/motors (warm Dubizzle session), THEN classified, THEN per-emirate
 const uaeTargets = [
-  ...SINGLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })),
+  ...SINGLE_TARGETS.filter(t => t.id.startsWith('bayut') || t.id === 'benchmark').map(t => ({ url: t.url, userData: { id: t.id } })),
   ...CLASSIFIED_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'classified', key: t.key } })),
-  ...PROP_SALE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'prop_sale', key: t.key } })),
-  ...PROP_RENT_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'prop_rent', key: t.key } }))
+  ...SINGLE_TARGETS.filter(t => !t.id.startsWith('bayut') && t.id !== 'benchmark').map(t => ({ url: t.url, userData: { id: t.id } }))
 ];
 
 await uaeCrawler.run(uaeTargets);
@@ -349,8 +279,8 @@ const stress = computeStress(results);
 const bayutSaleCount = results.bayut_ajman_sale?.count || null;
 const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
 
-const propertySaleEntry = Object.keys(results.property_sale).length > 0 ? { date: TODAY, ...results.property_sale } : null;
-const propertyRentEntry = Object.keys(results.property_rent).length > 0 ? { date: TODAY, ...results.property_rent } : null;
+const propertySaleEntry = results.property_sale ? { date: TODAY, ...results.property_sale } : null;
+const propertyRentEntry = results.property_rent ? { date: TODAY, ...results.property_rent } : null;
 const classifiedEntry = results.classified && Object.keys(results.classified).length > 0
   ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.classified } : null;
 
@@ -358,7 +288,6 @@ const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
   stress: { date: TODAY, total: stress.total, band: stress.band, components: stress.components },
   dubizzle_classified_entry:    classifiedEntry,
-  dubizzle_jobs_entry:          results.jobs_fulltime   ? { date: TODAY, ...results.jobs_fulltime }   : null,
   dubizzle_motors_entry:        results.motors_usedcars ? { date: TODAY, ...results.motors_usedcars } : null,
   dubizzle_property_sale_entry: propertySaleEntry,
   dubizzle_property_rent_entry: propertyRentEntry,
