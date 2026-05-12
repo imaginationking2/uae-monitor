@@ -20,16 +20,9 @@ const results = {
   errors: []
 };
 
-const CLASSIFIED_TARGETS = [
-  { id: 'cls_furniture',    key: 'furniture_home',  url: 'https://uae.dubizzle.com/en/classified/furniture-home-garden/' },
-  { id: 'cls_appliances',   key: 'home_appliances', url: 'https://uae.dubizzle.com/en/classified/home-appliances/' },
-  { id: 'cls_sports',       key: 'sports',          url: 'https://uae.dubizzle.com/en/classified/sports-equipment/' },
-  { id: 'cls_mobiles',      key: 'mobiles_tablets', url: 'https://uae.dubizzle.com/en/classified/mobile-phones/' },
-  { id: 'cls_electronics',  key: 'electronics',     url: 'https://uae.dubizzle.com/en/classified/tv-audio-cameras/' },
-  { id: 'cls_computers',    key: 'computers',       url: 'https://uae.dubizzle.com/en/classified/computers-networking/' }
-];
-
+// 9 URLs total — minimal volume, all confirmed selectors
 const SINGLE_TARGETS = [
+  { id: 'classified',       url: 'https://uae.dubizzle.com/classified/' },
   { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
   { id: 'prop_sale',        url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
   { id: 'prop_rent',        url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
@@ -43,6 +36,40 @@ const LUXURY_TARGETS = [
   { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
 
+// Map of data-testid names on the /classified/ homepage to our internal keys
+const CLASSIFIED_TESTIDS = {
+  'Furniture, Home & Garden': 'furniture_home',
+  'Home Appliances':          'home_appliances',
+  'Sports Equipment':         'sports',
+  'Mobile Phones & Tablets':  'mobiles_tablets',
+  'Electronics':              'electronics',
+  'Computers & Networking':   'computers'
+};
+
+// Parse the /classified/ homepage — ALL 6 category counts in ONE page
+async function parseClassified(page, log) {
+  try { await page.waitForSelector('[data-testid="subcategories"]', { timeout: 15000 }); }
+  catch { log.warning('classified: waitForSelector timed out'); }
+  return page.evaluate((testidMap) => {
+    const section = document.querySelector('[data-testid="subcategories"]');
+    if (!section) return null;
+    const result = {};
+    const cards = section.querySelectorAll('a > div > div');
+    cards.forEach(card => {
+      const nameEl = card.querySelector('[data-testid]');
+      if (!nameEl) return;
+      const name = nameEl.getAttribute('data-testid');
+      const countText = card.children[1]?.textContent?.trim();
+      const key = testidMap[name];
+      if (key && countText) {
+        const m = countText.match(/([\d,]+)/);
+        if (m) result[key] = parseInt(m[1].replace(/,/g, ''));
+      }
+    });
+    return Object.keys(result).length > 0 ? result : null;
+  }, CLASSIFIED_TESTIDS);
+}
+
 async function parseMotors(page, log) {
   try { await page.waitForSelector('[data-testid="Used Cars"]', { timeout: 10000 }); }
   catch { log.warning('motors: waitForSelector timed out'); }
@@ -51,13 +78,6 @@ async function parseMotors(page, log) {
     if (el && el.nextElementSibling) {
       const m = el.nextElementSibling.textContent.match(/([\d,]+)/);
       if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
-    }
-    const allP = Array.from(document.querySelectorAll('p'));
-    for (let i = 0; i < allP.length - 1; i++) {
-      if (allP[i].textContent.trim() === 'Used Cars') {
-        const m = allP[i + 1].textContent.match(/([\d,]+)/);
-        if (m) return { used_cars: parseInt(m[1].replace(/,/g, '')) };
-      }
     }
     return null;
   });
@@ -159,7 +179,7 @@ try {
 } catch (e) { console.log('US proxy failed: ' + e.message); }
 
 async function handleRequest({ request, page, log }) {
-  const { id, group, key } = request.userData;
+  const { id } = request.userData;
   log.info('Scraping: ' + id);
 
   try { await page.waitForLoadState('networkidle', { timeout: 25000 }); }
@@ -173,35 +193,26 @@ async function handleRequest({ request, page, log }) {
 
   let parsed = null;
 
-  if (group === 'classified') {
-    parsed = await parseListingCount(page);
-    if (!parsed) throw new Error(id + ' parse failed');
-    if (!results.classified) results.classified = {};
-    results.classified[key] = parsed;
-    log.info('OK ' + id + ': ' + key + '=' + parsed);
-    await sleep(5000);
-    await page.close();
-    return;
-  }
-
   switch (id) {
+    case 'classified':
+      parsed = await parseClassified(page, log);
+      if (!parsed) throw new Error('classified parse failed');
+      results.classified = parsed;
+      break;
     case 'motors':
       parsed = await parseMotors(page, log);
       if (!parsed) throw new Error('motors parse failed');
       results.motors_usedcars = parsed;
-      await sleep(5000);
       break;
     case 'prop_sale':
       parsed = await parseListingCount(page);
       if (!parsed) throw new Error('prop_sale parse failed');
       results.property_sale = { total_uae: parsed };
-      await sleep(5000);
       break;
     case 'prop_rent':
       parsed = await parseListingCount(page);
       if (!parsed) throw new Error('prop_rent parse failed');
       results.property_rent = { total_uae: parsed };
-      await sleep(5000);
       break;
     case 'luxury':
       parsed = await parseLuxury(page);
@@ -235,7 +246,7 @@ async function handleRequest({ request, page, log }) {
       results.benchmark = parsed;
       break;
   }
-  log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 120));
+  log.info('OK ' + id + ': ' + JSON.stringify(parsed).substring(0, 150));
   await page.close();
 }
 
@@ -266,13 +277,7 @@ const usCrawler = new PlaywrightCrawler({
   failedRequestHandler: failedHandler
 });
 
-const uaeTargets = [
-  ...SINGLE_TARGETS.filter(t => t.id.startsWith('bayut') || t.id === 'benchmark').map(t => ({ url: t.url, userData: { id: t.id } })),
-  ...CLASSIFIED_TARGETS.map(t => ({ url: t.url, userData: { id: t.id, group: 'classified', key: t.key } })),
-  ...SINGLE_TARGETS.filter(t => !t.id.startsWith('bayut') && t.id !== 'benchmark').map(t => ({ url: t.url, userData: { id: t.id } }))
-];
-
-await uaeCrawler.run(uaeTargets);
+await uaeCrawler.run(SINGLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 await usCrawler.run(LUXURY_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
@@ -281,8 +286,7 @@ const bayutSaleAvg = results.bayut_ajman_sale?.avg_sale_price || null;
 
 const propertySaleEntry = results.property_sale ? { date: TODAY, ...results.property_sale } : null;
 const propertyRentEntry = results.property_rent ? { date: TODAY, ...results.property_rent } : null;
-const classifiedEntry = results.classified && Object.keys(results.classified).length > 0
-  ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.classified } : null;
+const classifiedEntry = results.classified ? { date: TODAY, scraped_at: SCRAPED_AT, ...results.classified } : null;
 
 const output = {
   date: TODAY, scraped_at: SCRAPED_AT,
