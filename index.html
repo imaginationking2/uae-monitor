@@ -13,7 +13,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
-.grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;}
 .card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
 .mc{background:var(--surface2);border-radius:var(--radius-sm);padding:12px 14px;}
 .mc .lbl{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
@@ -48,8 +48,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .status-bar{font-size:10px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;padding-top:10px;border-top:0.5px solid var(--border);}
 .warn-box{background:rgba(239,159,39,.08);border:0.5px solid rgba(239,159,39,.2);border-radius:var(--radius-sm);padding:10px 14px;font-size:11px;color:#FAC775;margin-bottom:4px;}
 .section-divider{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 0;border-bottom:0.5px solid var(--border);}
-@media(max-width:900px){.grid5{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:700px){.grid2,.grid3,.grid4,.grid5{grid-template-columns:1fr;}body{padding:12px;}}
+@media(max-width:1100px){.grid6{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:700px){.grid2,.grid3,.grid4,.grid6{grid-template-columns:1fr;}body{padding:12px;}}
 </style>
 </head>
 <body>
@@ -106,6 +106,15 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   <div class="src">Bands: 0–29 Stable · 30–44 Mild · 45–59 Clear · 60–74 High · 75–100 Crisis</div>
 </div>
 
+<div class="section-divider">Dubizzle Classifieds — Consumer Goods Pressure</div>
+<div class="card">
+  <div class="st">Dubizzle Classified UAE — 6 categories <span class="pill p-blue" id="cls-pill">—</span></div>
+  <div class="grid6" id="cls-metrics" style="margin-bottom:14px;"></div>
+  <div class="leg" id="cls-leg"></div>
+  <div class="cw" style="height:200px;"><canvas id="clsChart"></canvas></div>
+  <div class="src">Source: uae.dubizzle.com/classified/ · Rising = consumer asset liquidation</div>
+</div>
+
 <div class="section-divider">Used Cars — Asset Liquidation Signal</div>
 <div class="card">
   <div class="st">Dubizzle Used Cars UAE — daily listing count <span class="pill p-blue" id="usedcars-pill">—</span></div>
@@ -113,30 +122,18 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   <div class="src">Source: uae.dubizzle.com/motors/ · Rising = consumer asset liquidation signal</div>
 </div>
 
-<div class="section-divider">Property For-Sale — UAE Supply Pressure</div>
-<div class="card">
-  <div class="st">Dubizzle Property for-sale by emirate <span class="pill p-blue" id="propsale-pill">—</span></div>
-  <div class="grid5" id="propsale-metrics" style="margin-bottom:14px;"></div>
-  <div class="leg" id="propsale-leg"></div>
-  <div class="cw" style="height:200px;"><canvas id="propSaleChart"></canvas></div>
-  <div class="src">Source: per-emirate /property-for-sale/residential/ · Rising = supply pressure / soft demand</div>
-</div>
-
-<div class="section-divider">Property For-Rent — UAE Supply Pressure</div>
-<div class="card">
-  <div class="st">Dubizzle Property for-rent by emirate <span class="pill p-blue" id="proprent-pill">—</span></div>
-  <div class="grid5" id="proprent-metrics" style="margin-bottom:14px;"></div>
-  <div class="leg" id="proprent-leg"></div>
-  <div class="cw" style="height:200px;"><canvas id="propRentChart"></canvas></div>
-  <div class="src">Source: per-emirate /property-for-rent/residential/ · Ajman rent trend = Al Zorah exit signal</div>
-</div>
-
-<div class="section-divider">Dubizzle Jobs — Economic Health Counter-Indicator</div>
-<div class="card">
-  <div class="st">Dubizzle Jobs UAE — full-time listings <span class="pill p-ok" id="jobs-direction-pill">—</span></div>
-  <div class="grid3" id="jobs-metrics" style="margin-bottom:12px;"></div>
-  <div class="cw" style="height:150px;"><canvas id="jobsChart"></canvas></div>
-  <div class="src">Source: uae.dubizzle.com/jobs/ · Rising = economy expanding</div>
+<div class="section-divider">Property Supply — UAE Total</div>
+<div class="grid2">
+  <div class="card">
+    <div class="st">Property for-sale UAE <span class="pill p-blue" id="propsale-pill">—</span></div>
+    <div class="cw" style="height:170px;"><canvas id="propSaleChart"></canvas></div>
+    <div class="src">Source: uae.dubizzle.com/property-for-sale/residential/</div>
+  </div>
+  <div class="card">
+    <div class="st">Property for-rent UAE <span class="pill p-blue" id="proprent-pill">—</span></div>
+    <div class="cw" style="height:170px;"><canvas id="propRentChart"></canvas></div>
+    <div class="src">Source: uae.dubizzle.com/property-for-rent/residential/</div>
+  </div>
 </div>
 
 <div class="section-divider">Luxury Price Drops — HNW Distress</div>
@@ -181,7 +178,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div class="card">
   <div class="st">Ajman Sale-to-Rent Ratio — day by day</div>
   <div class="cw" style="height:150px;"><canvas id="ratioChart"></canvas></div>
-  <div class="src">Ratio = for-sale ÷ for-rent · Watch >2.0 · Alert >2.5</div>
+  <div class="src">Ratio = for-sale ÷ for-rent · Watch &gt;2.0 · Alert &gt;2.5</div>
 </div>
 
 <div class="status-bar">
@@ -195,9 +192,26 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 const GIST='https://gist.githubusercontent.com/imaginationking2/6864f9c206558d36b9777b00f3758087/raw';
 const REFRESH_MS=10*60*1000;
 const C={green:'#1D9E75',blue:'#378ADD',amber:'#EF9F27',red:'#E24B4A',teal:'#5DCAA5',coral:'#D85A30',purple:'#7F77DD',orange:'#F5793A',gray:'#888780',grid:'rgba(255,255,255,0.06)',tick:'#888780'};
-const EMIRATE_KEYS=['uae','dubai','abu_dhabi','sharjah','ajman','rak','fujairah','uaq','alain'];
-const EMIRATE_NAMES={uae:'UAE Total',dubai:'Dubai',abu_dhabi:'Abu Dhabi',sharjah:'Sharjah',ajman:'Ajman',rak:'RAK',fujairah:'Fujairah',uaq:'UAQ',alain:'Al Ain'};
-const EMIRATE_COLORS={uae:C.green,dubai:C.blue,abu_dhabi:C.amber,sharjah:C.purple,ajman:C.coral,rak:C.teal,fujairah:C.orange,uaq:C.red,alain:C.gray};
+
+// Classified categories - same order/colors as May 9 style
+const CLS_KEYS = ['furniture_home','home_appliances','sports','mobiles_tablets','electronics','computers'];
+const CLS_NAMES = {
+  furniture_home: 'Furniture & Home',
+  home_appliances: 'Home Appliances',
+  sports: 'Sports Equipment',
+  mobiles_tablets: 'Mobiles & Tablets',
+  electronics: 'Electronics',
+  computers: 'Computers'
+};
+const CLS_COLORS = {
+  furniture_home: C.coral,
+  home_appliances: C.amber,
+  sports: C.green,
+  mobiles_tablets: C.blue,
+  electronics: C.purple,
+  computers: C.teal
+};
+
 let charts={};
 const $=id=>document.getElementById(id);
 const fmt=n=>n!=null?Number(n).toLocaleString():'—';
@@ -244,11 +258,56 @@ function renderStressChart(series){
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:sc().x,y:{...sc().y,min:0,max:100}}}});
 }
 
+function renderClassified(series){
+  const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;
+  if(!last){
+    $('cls-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;font-size:11px;">No data yet — runs nightly at midnight UAE time</div>';
+    $('cls-pill').textContent='No data';
+    emptyChart('clsChart');return;
+  }
+  // 6 cards, one per category
+  const cards = CLS_KEYS.filter(k=>last[k]!=null).map(k=>{
+    const v=last[k], p=prev?.[k];
+    const chg=p&&v?((v-p)/p*100).toFixed(1):null;
+    const col=CLS_COLORS[k];
+    const chgCol = chg!==null ? (Number(chg)>=0?C.red:C.green) : C.gray;
+    return '<div class="mc"><div class="lbl">'+CLS_NAMES[k]+'</div><div class="val" style="color:'+col+';">'+fmt(v)+'</div><div class="sub" style="color:'+chgCol+';">'+(chg!==null?(Number(chg)>=0?'+':'')+chg+'% vs prev':'baseline')+'</div></div>';
+  }).join('');
+  $('cls-metrics').innerHTML=cards;
+
+  // Totals pill
+  const total=CLS_KEYS.reduce((s,k)=>s+(last[k]||0),0);
+  const prevTotal=prev?CLS_KEYS.reduce((s,k)=>s+(prev[k]||0),0):null;
+  const totalChg=prevTotal?((total-prevTotal)/prevTotal*100).toFixed(2):null;
+  const pill=$('cls-pill');
+  pill.textContent='Total: '+fmt(total)+(totalChg!==null?' ('+(Number(totalChg)>=0?'+':'')+totalChg+'%)':'');
+  pill.className='pill '+(totalChg!==null&&Number(totalChg)>2?'p-red':totalChg!==null&&Number(totalChg)>0.5?'p-warn':'p-ok');
+
+  // Legend
+  const leg=$('cls-leg');leg.innerHTML='';
+  CLS_KEYS.forEach(k=>{
+    const d=document.createElement('div');d.className='li';
+    d.innerHTML='<span class="ld" style="background:'+CLS_COLORS[k]+';"></span>'+CLS_NAMES[k];
+    leg.appendChild(d);
+  });
+
+  // Multi-line chart
+  if(series.length<2){emptyChart('clsChart');return;}
+  mkChart('clsChart',{type:'line',data:{labels:series.map(fmtDate),datasets:CLS_KEYS.map(k=>({
+    label:CLS_NAMES[k],
+    data:series.map(e=>e[k]??null),
+    borderColor:CLS_COLORS[k],
+    borderWidth:1.8,
+    pointRadius:2.5,
+    tension:0.35,fill:false,spanGaps:true
+  }))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});
+}
+
 function renderUsedCars(series){
   const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;
   const BASELINE=38770;
   if(!last){$('usedcars-pill').textContent='No data';emptyChart('usedCarsChart');return;}
-  const v=last.used_cars||0,chg=prev?v-prev.used_cars:0;
+  const v=last.used_cars||0;
   const trend=v>BASELINE?'▲ '+(((v-BASELINE)/BASELINE*100).toFixed(1))+'% above baseline':v<BASELINE?'▼ Below baseline':'At baseline';
   const pill=$('usedcars-pill');pill.textContent=fmt(v)+' · '+trend;pill.className='pill '+(v>BASELINE*1.05?'p-red':v>BASELINE*1.02?'p-warn':'p-ok');
   if(series.length<2){emptyChart('usedCarsChart');return;}
@@ -258,69 +317,19 @@ function renderUsedCars(series){
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>v.toLocaleString())}});
 }
 
-function renderEmirateSection(series, prefix, mainLabel){
+function renderPropertyTotal(series, prefix, color){
   const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null;
-  if(!last){
-    $(prefix+'-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;font-size:11px;">No data yet — runs nightly at midnight UAE time</div>';
-    $(prefix+'-pill').textContent='No data';
-    emptyChart(prefix==='propsale'?'propSaleChart':'propRentChart');
-    return;
-  }
-  // Cards: UAE total prominent, then each emirate
-  const cards = EMIRATE_KEYS.filter(k=>last[k]!=null).map(k=>{
-    const v=last[k],p=prev?.[k];
-    const chg=p&&v?((v-p)/p*100).toFixed(1):null;
-    const col=EMIRATE_COLORS[k];
-    return '<div class="mc'+(k==='uae'?'':' mc-sm')+'"><div class="lbl">'+EMIRATE_NAMES[k]+'</div><div class="val" style="color:'+col+';">'+fmt(v)+'</div><div class="sub">'+(chg!==null?(Number(chg)>=0?'+':'')+chg+'% vs prev':'baseline')+'</div></div>';
-  }).join('');
-  $(prefix+'-metrics').innerHTML=cards;
-
-  // Pill
-  const uaeTotal=last.uae;
-  const uaeTotalPrev=prev?.uae;
-  const uaeChg=uaeTotalPrev&&uaeTotal?((uaeTotal-uaeTotalPrev)/uaeTotalPrev*100).toFixed(2):null;
+  const chartId = prefix==='propsale'?'propSaleChart':'propRentChart';
+  if(!last){$(prefix+'-pill').textContent='No data';emptyChart(chartId);return;}
+  const v=last.total_uae||0;
+  const chg=prev?((v-prev.total_uae)/prev.total_uae*100).toFixed(2):null;
   const pill=$(prefix+'-pill');
-  pill.textContent='UAE: '+fmt(uaeTotal)+(uaeChg!==null?' ('+(Number(uaeChg)>=0?'+':'')+uaeChg+'%)':'');
-  pill.className='pill '+(uaeChg!==null&&Number(uaeChg)>1?'p-red':uaeChg!==null&&Number(uaeChg)>0.3?'p-warn':'p-ok');
-
-  // Legend (city colors)
-  const leg=$(prefix+'-leg');leg.innerHTML='';
-  ['uae','dubai','abu_dhabi','sharjah','ajman','rak'].forEach(k=>{
-    const d=document.createElement('div');d.className='li';
-    d.innerHTML='<span class="ld" style="background:'+EMIRATE_COLORS[k]+';"></span>'+EMIRATE_NAMES[k];
-    leg.appendChild(d);
-  });
-
-  // Chart with multi-line per emirate (skip UAE total to keep scale readable; show top 5 emirates)
-  if(series.length<2){emptyChart(prefix==='propsale'?'propSaleChart':'propRentChart');return;}
-  const lineKeys=['dubai','abu_dhabi','sharjah','ajman','rak'];
-  mkChart(prefix==='propsale'?'propSaleChart':'propRentChart',{type:'line',data:{labels:series.map(fmtDate),datasets:lineKeys.map(k=>({
-    label:EMIRATE_NAMES[k],
-    data:series.map(e=>e[k]??null),
-    borderColor:EMIRATE_COLORS[k],
-    borderWidth:k==='ajman'?2.5:1.5,
-    pointRadius:k==='ajman'?3:2,
-    tension:0.35,fill:false,spanGaps:true
-  }))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});
-}
-
-function renderJobs(series){
-  const last=series?.[series.length-1],prev=series?.length>=2?series[series.length-2]:null,BASELINE=1310;
-  if(!last){$('jobs-metrics').innerHTML='<div style="color:var(--muted);grid-column:1/-1;font-size:11px;">No jobs data yet — baseline 1,310</div>';emptyChart('jobsChart');return;}
-  const v=last.full_time||0,chg=prev?v-(prev.full_time||0):0;
-  const trend=v>BASELINE?'▲ Above baseline':v<BASELINE?'▼ Below baseline':'At baseline';
-  const trendCol=v>BASELINE?C.green:v<BASELINE*0.9?C.red:C.amber;
-  $('jobs-metrics').innerHTML=[
-    {lbl:'Full-Time Jobs UAE',val:fmt(v),sub:(chg>=0?'+':'')+chg+' vs prev',col:trendCol},
-    {lbl:'Baseline (May 6)',val:'1,310',sub:'reference point',col:C.gray},
-    {lbl:'Δ from baseline',val:(v-BASELINE>=0?'+':'')+(v-BASELINE),sub:((v-BASELINE)/BASELINE*100).toFixed(1)+'%',col:trendCol}
-  ].map(({lbl,val,sub,col})=>'<div class="mc"><div class="lbl">'+lbl+'</div><div class="val" style="color:'+col+';">'+(val||'—')+'</div><div class="sub">'+sub+'</div></div>').join('');
-  const pill=$('jobs-direction-pill');pill.textContent=trend;pill.className='pill '+(v>BASELINE?'p-ok':v<BASELINE*0.9?'p-red':'p-warn');
-  if(series.length<2){emptyChart('jobsChart');return;}
-  mkChart('jobsChart',{type:'line',data:{labels:series.map(fmtDate),datasets:[
-    {label:'Full-time jobs',data:series.map(e=>e.full_time??null),borderColor:C.green,backgroundColor:C.green+'18',borderWidth:2.5,pointRadius:4,fill:true,tension:0.35,spanGaps:true},
-    {label:'Baseline (1,310)',data:series.map(()=>BASELINE),borderColor:C.gray,borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false}
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.tick,font:{size:10}}}},scales:sc(v=>v.toLocaleString())}});
+  pill.textContent=fmt(v)+(chg!==null?' ('+(Number(chg)>=0?'+':'')+chg+'%)':'');
+  pill.className='pill '+(chg!==null&&Number(chg)>1?'p-red':chg!==null&&Number(chg)>0.3?'p-warn':'p-ok');
+  if(series.length<2){emptyChart(chartId);return;}
+  mkChart(chartId,{type:'line',data:{labels:series.map(fmtDate),datasets:[{
+    label:'Total UAE',data:series.map(e=>e.total_uae??null),borderColor:color,backgroundColor:color+'18',borderWidth:2.5,pointRadius:4,fill:true,tension:0.35,spanGaps:true
+  }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc(v=>v>=1000?(v/1000).toFixed(0)+'k':v)}});
 }
 
 function renderLuxury(lastLux,dScr){
@@ -401,10 +410,10 @@ async function render(){
     $('alz-pill').textContent=alzMode(stress.total||0);
     renderSubscores(stress);
     renderStressChart(history.stress_series||[]);
+    renderClassified(history.dubizzle_series||[]);
     renderUsedCars(history.dubizzle_motors_series||[]);
-    renderEmirateSection(history.dubizzle_property_sale_series||[],'propsale','for-sale');
-    renderEmirateSection(history.dubizzle_property_rent_series||[],'proprent','for-rent');
-    renderJobs(history.dubizzle_jobs_series||[]);
+    renderPropertyTotal(history.dubizzle_property_sale_series||[],'propsale',C.green);
+    renderPropertyTotal(history.dubizzle_property_rent_series||[],'proprent',C.blue);
     const luxSeries=history.luxury_drops_series||[];
     renderLuxury(luxSeries[luxSeries.length-1],stress.components?.luxury||0);
     renderLuxChart(luxSeries);
