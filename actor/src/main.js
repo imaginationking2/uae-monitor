@@ -20,23 +20,27 @@ const results = {
   errors: []
 };
 
-// 9 URLs total — minimal volume, all confirmed selectors
-const SINGLE_TARGETS = [
-  { id: 'classified',       url: 'https://uae.dubizzle.com/classified/' },
-  { id: 'motors',           url: 'https://uae.dubizzle.com/motors/' },
-  { id: 'prop_sale',        url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
-  { id: 'prop_rent',        url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' },
+// ── DUBIZZLE TARGETS — UAE residential proxy (countryCode: 'AE') ─────────────
+const DUBIZZLE_TARGETS = [
+  { id: 'classified', url: 'https://uae.dubizzle.com/classified/' },
+  { id: 'motors',     url: 'https://uae.dubizzle.com/motors/' },
+  { id: 'prop_sale',  url: 'https://uae.dubizzle.com/en/property-for-sale/residential/' },
+  { id: 'prop_rent',  url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' }
+];
+
+// ── BAYUT TARGETS — Generic Apify residential proxy (no country lock) ───────
+const BAYUT_TARGETS = [
   { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
   { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
   { id: 'bayut_ajman_rent', url: 'https://www.bayut.com/to-rent/property/ajman/' },
   { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' }
 ];
 
+// ── LUXURY TARGETS — US residential proxy ──────────────────────────────────────
 const LUXURY_TARGETS = [
-  { id: 'luxury',           url: 'https://www.luxurypricedrops.com/dubai/' }
+  { id: 'luxury',     url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
 
-// Map of data-testid names on the /classified/ homepage to our internal keys
 const CLASSIFIED_TESTIDS = {
   'Furniture, Home & Garden': 'furniture_home',
   'Home Appliances':          'home_appliances',
@@ -46,7 +50,6 @@ const CLASSIFIED_TESTIDS = {
   'Computers & Networking':   'computers'
 };
 
-// Parse the /classified/ homepage — ALL 6 category counts in ONE page
 async function parseClassified(page, log) {
   try { await page.waitForSelector('[data-testid="subcategories"]', { timeout: 15000 }); }
   catch { log.warning('classified: waitForSelector timed out'); }
@@ -113,9 +116,9 @@ async function parseLuxury(page) {
       if (m) { avg_drop_pct = parseFloat(m[0]); break; }
     }
     const pctEls = Array.from(document.querySelectorAll('*')).filter(e =>
-      e.children.length === 0 && /^[\u2212\-][\d.]+%$/.test(e.textContent.trim())
+      e.children.length === 0 && /^[−\-][\d.]+%$/.test(e.textContent.trim())
     );
-    const pcts = pctEls.map(e => parseFloat(e.textContent.replace(/[\u2212\-]/, '')));
+    const pcts = pctEls.map(e => parseFloat(e.textContent.replace(/[−\-]/, '')));
     const max_drop_pct = pcts.length ? Math.max(...pcts) : null;
     return { drop_count, avg_drop_pct, max_drop_pct };
   });
@@ -168,16 +171,26 @@ function computeStress(r) {
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
-let proxyUAE;
+// ── Proxy configurations (3 separate pools) ────────────────────────────────────
+let proxyDubizzle;
 try {
-  proxyUAE = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
-} catch (e) { console.log('UAE proxy failed: ' + e.message); }
+  proxyDubizzle = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
+  console.log('Dubizzle proxy: RESIDENTIAL AE');
+} catch (e) { console.log('Dubizzle (AE) proxy failed: ' + e.message); }
 
-let proxyUS;
+let proxyBayut;
 try {
-  proxyUS = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'US' });
-} catch (e) { console.log('US proxy failed: ' + e.message); }
+  proxyBayut = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'] });
+  console.log('Bayut proxy: RESIDENTIAL (no country lock)');
+} catch (e) { console.log('Bayut (generic) proxy failed: ' + e.message); }
 
+let proxyLuxury;
+try {
+  proxyLuxury = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'US' });
+  console.log('Luxury proxy: RESIDENTIAL US');
+} catch (e) { console.log('Luxury (US) proxy failed: ' + e.message); }
+
+// ── Request handler (shared) ─────────────────────────────────────────────────────
 async function handleRequest({ request, page, log }) {
   const { id } = request.userData;
   log.info('Scraping: ' + id);
@@ -255,8 +268,9 @@ function failedHandler({ request, error }) {
   results.errors.push({ source: request.userData.id, error: error.message });
 }
 
-const uaeCrawler = new PlaywrightCrawler({
-  proxyConfiguration: proxyUAE,
+// ── Three separate crawlers, each with its own proxy ──────────────────────────
+const dubizzleCrawler = new PlaywrightCrawler({
+  proxyConfiguration: proxyDubizzle,
   maxRequestRetries: 2,
   navigationTimeoutSecs: 60,
   requestHandlerTimeoutSecs: 90,
@@ -266,8 +280,8 @@ const uaeCrawler = new PlaywrightCrawler({
   failedRequestHandler: failedHandler
 });
 
-const usCrawler = new PlaywrightCrawler({
-  proxyConfiguration: proxyUS,
+const bayutCrawler = new PlaywrightCrawler({
+  proxyConfiguration: proxyBayut,
   maxRequestRetries: 2,
   navigationTimeoutSecs: 60,
   requestHandlerTimeoutSecs: 90,
@@ -277,8 +291,21 @@ const usCrawler = new PlaywrightCrawler({
   failedRequestHandler: failedHandler
 });
 
-await uaeCrawler.run(SINGLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
-await usCrawler.run(LUXURY_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
+const luxuryCrawler = new PlaywrightCrawler({
+  proxyConfiguration: proxyLuxury,
+  maxRequestRetries: 2,
+  navigationTimeoutSecs: 60,
+  requestHandlerTimeoutSecs: 90,
+  maxConcurrency: 1,
+  launchContext: { launchOptions: { args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] } },
+  requestHandler: handleRequest,
+  failedRequestHandler: failedHandler
+});
+
+// Run sequentially so one crawler's IP block doesn't poison others
+await dubizzleCrawler.run(DUBIZZLE_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
+await bayutCrawler.run(BAYUT_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
+await luxuryCrawler.run(LUXURY_TARGETS.map(t => ({ url: t.url, userData: { id: t.id } })));
 
 const stress = computeStress(results);
 const bayutSaleCount = results.bayut_ajman_sale?.count || null;
