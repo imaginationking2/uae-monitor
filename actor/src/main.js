@@ -20,7 +20,7 @@ const results = {
   errors: []
 };
 
-// DUBIZZLE TARGETS - UAE residential proxy (countryCode: 'AE')
+// ── DUBIZZLE TARGETS — Generic Apify residential proxy (no country lock - test) ─
 const DUBIZZLE_TARGETS = [
   { id: 'classified', url: 'https://uae.dubizzle.com/classified/' },
   { id: 'motors',     url: 'https://uae.dubizzle.com/motors/' },
@@ -28,7 +28,7 @@ const DUBIZZLE_TARGETS = [
   { id: 'prop_rent',  url: 'https://uae.dubizzle.com/en/property-for-rent/residential/' }
 ];
 
-// BAYUT TARGETS - Generic Apify residential proxy (no country lock)
+// ── BAYUT TARGETS — Generic Apify residential proxy (no country lock) ───────
 const BAYUT_TARGETS = [
   { id: 'bayut_d9',         url: 'https://www.bayut.com/for-sale/property/ajman/al-zorah/district-9/' },
   { id: 'bayut_ajman_sale', url: 'https://www.bayut.com/for-sale/property/ajman/' },
@@ -36,7 +36,7 @@ const BAYUT_TARGETS = [
   { id: 'benchmark',        url: 'https://www.bayut.com/property/details-13073585.html' }
 ];
 
-// LUXURY TARGETS - US residential proxy
+// ── LUXURY TARGETS — US residential proxy ──────────────────────────────────────
 const LUXURY_TARGETS = [
   { id: 'luxury',     url: 'https://www.luxurypricedrops.com/dubai/' }
 ];
@@ -171,12 +171,12 @@ function computeStress(r) {
   return { total, band, components: { dubizzle: dubizzleScore, luxury: luxuryScore, bayut: bayutScore, ajman_ratio: ratioScore }, ratio };
 }
 
-// Proxy configurations (3 separate pools)
+// ── Proxy configurations (3 separate pools) ────────────────────────────────────
 let proxyDubizzle;
 try {
-  proxyDubizzle = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'], countryCode: 'AE' });
-  console.log('Dubizzle proxy: RESIDENTIAL AE');
-} catch (e) { console.log('Dubizzle (AE) proxy failed: ' + e.message); }
+  proxyDubizzle = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'] });
+  console.log('Dubizzle proxy: RESIDENTIAL (no country lock - test)');
+} catch (e) { console.log('Dubizzle (generic) proxy failed: ' + e.message); }
 
 let proxyBayut;
 try {
@@ -190,6 +190,7 @@ try {
   console.log('Luxury proxy: RESIDENTIAL US');
 } catch (e) { console.log('Luxury (US) proxy failed: ' + e.message); }
 
+// ── Request handler (shared) ─────────────────────────────────────────────────────
 async function handleRequest({ request, page, log }) {
   const { id } = request.userData;
   log.info('Scraping: ' + id);
@@ -267,7 +268,7 @@ function failedHandler({ request, error }) {
   results.errors.push({ source: request.userData.id, error: error.message });
 }
 
-// Three separate crawlers, each with its own proxy
+// ── Three separate crawlers, each with its own proxy ──────────────────────────
 const dubizzleCrawler = new PlaywrightCrawler({
   proxyConfiguration: proxyDubizzle,
   maxRequestRetries: 2,
