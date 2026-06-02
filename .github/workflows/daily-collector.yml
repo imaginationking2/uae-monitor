@@ -173,39 +173,113 @@ jobs:
               prev = last_known(history.get('ajman_property_series', []))
               print('  ajman: MISSING - carry forward ' + (prev['date'] if prev else 'none'))
 
-          # Stress: 4-component using motors used_cars
-          motors = new_data.get('dubizzle_motors_entry') or last_known(history.get('dubizzle_motors_series', []))
-          lux = new_data.get('luxury_entry') or last_known(history.get('luxury_drops_series', []))
-          bay = new_data.get('bayut_entry') or last_known(history.get('bayut_series', []))
-          ajm = new_data.get('ajman_entry') or last_known(history.get('ajman_property_series', []))
+          # Stress: stale-aware scoring with log-scale luxury (v2)
+          import math
+          from datetime import date as _date_t
 
-          used_cars = motors.get('used_cars', 38770) if motors else 38770
-          drop_count = lux.get('drop_count', 1542) if lux else 1542
-          d9 = bay.get('district9_listings', 31) if bay else 31
-          sale = ajm.get('ajman_for_sale', 0) if ajm else 0
-          rent = ajm.get('ajman_for_rent', 1) if ajm else 1
-          ratio = round(sale / rent, 3) if rent > 0 else 0
+          def _days_since_fresh(series, today_str):
+              if not series: return 999
+              last_date_str = series[-1].get('date')
+              if not last_date_str: return 999
+              try:
+                  return (_date_t.fromisoformat(today_str) - _date_t.fromisoformat(last_date_str)).days
+              except Exception: return 999
 
+          STALE_DAYS = 3
+
+          motors_today = new_data.get('dubizzle_motors_entry')
+          lux_today    = new_data.get('luxury_entry')
+          bay_today    = new_data.get('bayut_entry')
+          ajm_today    = new_data.get('ajman_entry')
+
+          motors_stale = 0 if motors_today else _days_since_fresh(history.get('dubizzle_motors_series', []), today)
+          lux_stale    = 0 if lux_today    else _days_since_fresh(history.get('luxury_drops_series', []), today)
+          bay_stale    = 0 if bay_today    else _days_since_fresh(history.get('bayut_series', []), today)
+          ajm_stale    = 0 if ajm_today    else _days_since_fresh(history.get('ajman_property_series', []), today)
+
+          motors_active = motors_stale < STALE_DAYS
+          lux_active    = lux_stale    < STALE_DAYS
+          bay_active    = bay_stale    < STALE_DAYS
+          ajm_active    = ajm_stale    < STALE_DAYS
+
+          motors = motors_today or last_known(history.get('dubizzle_motors_series', []))
+          lux    = lux_today    or last_known(history.get('luxury_drops_series', []))
+          bay    = bay_today    or last_known(history.get('bayut_series', []))
+          ajm    = ajm_today    or last_known(history.get('ajman_property_series', []))
+
+          used_cars  = motors.get('used_cars', 38770) if motors else 38770
+          drop_count = lux.get('drop_count', 1542)    if lux    else 1542
+          d9         = bay.get('district9_listings', 31) if bay else 31
+          sale       = ajm.get('ajman_for_sale', 0)   if ajm    else 0
+          rent       = ajm.get('ajman_for_rent', 1)   if ajm    else 1
+          ratio      = round(sale / rent, 3) if rent > 0 else 0
+
+          # Component scores (each 0-25)
+          # A: Used cars vs baseline 38,770 (linear)
           dubizzle_s = min(25, max(0, round(((used_cars - 38770) / 38770) * 100 / 0.4)))
-          luxury_s = min(25, round((drop_count - 1542) / 1542 * 100 / 2))
-          bayut_s = min(25, round((31 - d9) / 31 * 100 / 2))
+          # B: Luxury drops - LOG SCALE so signal does not saturate (5x baseline = 25)
+          _lux_ratio = max(1.0, drop_count / 1542)
+          luxury_s = min(25, max(0, round(math.log(_lux_ratio) / math.log(5) * 25)))
+          # C: Bayut D9 supply decline (linear)
+          bayut_s = min(25, max(0, round((31 - d9) / 31 * 100 / 2)))
+          # D: Ajman sale/rent ratio (linear)
           ratio_s = min(25, max(0, round(ratio * 10 - 12)))
-          total = dubizzle_s + luxury_s + bayut_s + ratio_s
 
-          band = ('Stable - no signal' if total < 30
-              else 'Mild stress building' if total < 45
-              else 'Clear stress building' if total < 60
-              else 'High stress - monitor closely' if total < 75
-              else 'Crisis signal')
+          # Only active components contribute to total AND denominator
+          _components_list = [
+              ('dubizzle',    dubizzle_s, motors_active),
+              ('luxury',      luxury_s,   lux_active),
+              ('bayut',       bayut_s,    bay_active),
+              ('ajman_ratio', ratio_s,    ajm_active),
+          ]
+          _active_scores = [s for (_n, s, a) in _components_list if a]
+          raw_score = sum(_active_scores)
+          max_available = 25 * len(_active_scores)
+          normalized = round(raw_score / max_available * 100) if max_available > 0 else 0
+
+          band = (
+              'Stable - no signal'             if normalized < 30
+              else 'Mild stress building'      if normalized < 45
+              else 'Clear stress building'     if normalized < 60
+              else 'High stress - monitor closely' if normalized < 75
+              else 'Crisis signal'
+          )
+
+          # Al Zorah specific readout (lower = better selling position for user)
+          az_supply_pressure = round((d9 / 31) * 50)
+          az_ratio_pressure  = min(50, max(0, round(ratio * 30)))
+          az_position = az_supply_pressure + az_ratio_pressure
 
           stress_entry = {
-              'date': today, 'total': total, 'band': band,
-              'components': {'dubizzle': dubizzle_s, 'luxury': luxury_s, 'bayut': bayut_s, 'ajman_ratio': ratio_s},
+              'date': today,
+              'total': normalized,
+              'raw_score': raw_score,
+              'max_available': max_available,
+              'band': band,
+              'components': {
+                  'dubizzle':    {'score': dubizzle_s, 'value': used_cars,  'active': motors_active, 'stale_days': motors_stale},
+                  'luxury':      {'score': luxury_s,   'value': drop_count, 'active': lux_active,    'stale_days': lux_stale},
+                  'bayut':       {'score': bayut_s,    'value': d9,         'active': bay_active,    'stale_days': bay_stale},
+                  'ajman_ratio': {'score': ratio_s,    'value': ratio,      'active': ajm_active,    'stale_days': ajm_stale},
+              },
+              'al_zorah_position': {
+                  'score': az_position,
+                  'supply_pressure': az_supply_pressure,
+                  'ratio_pressure': az_ratio_pressure,
+                  'd9_listings': d9,
+                  'ajman_ratio': ratio,
+                  'interpretation': 'lower = better selling position'
+              },
+              'data_quality': {
+                  'active_sources': len(_active_scores),
+                  'total_sources': 4,
+                  'fresh_today': sum(1 for x in [motors_today, lux_today, bay_today, ajm_today] if x is not None),
+              },
               'carry_forward': {
-                  'dubizzle': new_data.get('dubizzle_motors_entry') is None,
-                  'luxury':   new_data.get('luxury_entry') is None,
-                  'bayut':    new_data.get('bayut_entry') is None,
-                  'ajman':    new_data.get('ajman_entry') is None,
+                  'dubizzle': motors_today is None,
+                  'luxury':   lux_today is None,
+                  'bayut':    bay_today is None,
+                  'ajman':    ajm_today is None,
               }
           }
 
